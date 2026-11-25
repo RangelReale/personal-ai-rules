@@ -1,6 +1,6 @@
 {
   "name": "personal-rules",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Always-on repository rules, Android/Rust/Go/C++ skills, and commands that set up, audit and release a repository.",
   "author": {
     "name": "Rangel Reale"
