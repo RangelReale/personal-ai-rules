@@ -167,13 +167,17 @@ expect "notes stop at next section" "$(grep -c 'later' "$tmp/notes.md")" 0
 mkdir -p "$tmp/w/bin" && cd "$tmp/w" || exit 1
 cat > bin/gh <<'EOF'
 #!/usr/bin/env bash
-# Fake gh for wait-pr.sh: `pr view` advances to the next line of $SCENARIO (the last repeats).
+# Fake gh for wait-pr.sh: each poll's `pr view` advances to the next line of $SCENARIO (the last
+# repeats). $REQUIRED_CHECKS (one per line) is what the base branch's protection requires.
 counter="$SCENARIO.n"
 i=$(cat "$counter" 2>/dev/null || echo 0)
-if [ "$1 $2" = "pr view" ]; then i=$((i + 1)); echo "$i" > "$counter"; fi
+case "$*" in "pr view"*mergeStateStatus*) i=$((i + 1)); echo "$i" > "$counter" ;; esac
 line=$(sed -n "${i}p" "$SCENARIO"); [ -n "$line" ] || line=$(tail -1 "$SCENARIO")
 IFS='|' read -r state all required <<< "$line"
 case "$*" in
+  "pr view"*baseRefName*) echo master ;;
+  "api repos/{owner}/{repo}/branches/"*) [ -n "${REQUIRED_CHECKS:-}" ] && echo "$REQUIRED_CHECKS" ;;
+  "api "*) ;;
   "pr view"*) echo "${PR_STATE:-OPEN} $state" ;;
   *--required*--json*) echo "$required" ;;
   *--json*) echo "$all" ;;
@@ -217,6 +221,16 @@ UNSTABLE|[$CI_OK,$X_FAIL]|[$CI_OK]")" "0 2"
 expect "wait-pr: lists the failure that is not required" "$(grep -c '^failed: macos' out)" 1
 expect "wait-pr: blocked by something other than checks" \
   "$(wait_pr "BLOCKED|[$CI_OK]|[$CI_OK]")" "1 3"
+# The required check's workflow is still queued: only a failed optional check is listed, and the
+# merge is blocked. That is a wait, not "blocked", until the required check reports.
+expect "wait-pr: waits for a required check that has not reported yet" \
+  "$(REQUIRED_CHECKS="CI result" wait_pr "BLOCKED|[$X_FAIL]|[]
+BLOCKED|[$X_FAIL]|[]
+BLOCKED|[$X_FAIL]|[]
+BLOCKED|[$X_FAIL]|[]
+CLEAN|[$X_FAIL,$CI_OK]|[$CI_OK]")" "0 5"
+expect "wait-pr: without protection to read, a lone failed optional check is still blocked" \
+  "$(wait_pr "BLOCKED|[$X_FAIL]|[]")" "1 3"
 expect "wait-pr: conflict" "$(wait_pr "DIRTY|[$P]|[]")" "1 1"
 expect "wait-pr: already merged" "$(PR_STATE=MERGED wait_pr "UNKNOWN|[$OK]|[]")" "3 1"
 
