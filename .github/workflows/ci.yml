@@ -1,0 +1,93 @@
+name: CI
+
+# Pull request runs are titled "PR #<number>: <title>"; an empty run-name keeps GitHub's default.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+  && format('PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title)
+  || '' }}
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # This repository dogfoods its own reusable workflows, called by local path.
+  changes:
+    uses: ./.github/workflows/changes.yml
+    with:
+      version-files: plugins/personal-rules/.claude-plugin/plugin.json
+
+  checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint"
+
+      - name: Caller templates are generated and lint clean
+        run: |
+          python3 -I scripts/gen-templates.py plugins/personal-rules/templates/workflows
+          git diff --exit-code -- plugins/personal-rules/templates/workflows \
+            || { echo "::error::Templates differ from scripts/gen-templates.py; regenerate them."; exit 1; }
+          PATH="$(go env GOPATH)/bin:$PATH" bash scripts/lint-templates.sh
+
+      - name: shellcheck
+        run: shellcheck plugins/personal-rules/scripts/*.sh scripts/*.sh tests/*.sh
+
+      - name: JSON
+        run: |
+          for f in .claude-plugin/marketplace.json plugins/personal-rules/.claude-plugin/plugin.json \
+                   plugins/personal-rules/hooks/hooks.json plugins/personal-rules/templates/github/*.json; do
+            jq empty "$f" || { echo "::error file=$f::invalid JSON"; exit 1; }
+          done
+
+      - name: Tests
+        run: bash tests/run.sh
+
+      - name: Plugin and marketplace validate
+        run: |
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code
+          claude plugin validate .
+          claude plugin validate plugins/personal-rules
+
+  changelog:
+    needs: changes
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/changelog-check.yml
+    with:
+      kind: ${{ needs.changes.outputs.kind }}
+
+  # The only check branch protection requires. Skipped jobs pass.
+  ci-result:
+    name: CI result
+    needs: [changes, checks, changelog]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in success | skipped) ;; *) exit 1 ;; esac
+          done
