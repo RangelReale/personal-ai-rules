@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-25
+
+### Added
+
+- `/personal-rules:mmp` merges the current worktree's work into master and pushes it, by the
+  repository's stage: a local merge for early repositories, a pull request merged on a green CI result
+  for established ones.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added
