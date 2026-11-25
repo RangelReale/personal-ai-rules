@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-11-25
+
+### Fixed
+
+- `/personal-rules:mmp` waits for a required check whose workflow is still queued, instead of
+  reporting the pull request as blocked when only an optional check has reported so far.
+
 ## [0.5.0] - 2026-11-25
 
 ### Added
