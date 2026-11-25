@@ -11,10 +11,11 @@ The reference for every file is `${CLAUDE_PLUGIN_ROOT}/reference/features.md`.
 
 1. Ask, in one `AskUserQuestion` call:
    - the main language: `android`, `rust`, `go`, `cpp` or `none` (it holds the version);
-   - the components (multi-select, none by default): an Android app and/or an iOS app in their own
-     folders, built on the main code. Then propose their folders (`apps/<name>-android` or
-     `ports/android`, `ports/ios`) and, for Android, the native library (`rust`/`go` from the main
-     language);
+   - the components (multi-select, none by default): an Android app, an iOS app and/or another
+     platform's port (`other`: a TV, a console) in their own folders, built on the main code. Then
+     propose their folders (`apps/<name>-android` or `ports/android`, `ports/ios`,
+     `ports/<platform>`), for Android the native library (`rust`/`go` from the main language), and
+     for `other` the command that builds it;
    - the features (multi-select), with **release** and **changelog** preselected (listed first and
      marked recommended); `license` (MIT), `dependabot` and `ci` unselected. Say that `ci` normally
      waits until `/personal-rules:establish`;

@@ -35,8 +35,9 @@ Read `.github/personal-rules.yml`. Its `stage` decides how work reaches `master`
   `git merge --no-ff <branch>` in the main checkout (after `git pull --ff-only`), then push `master`.
 - `stage: established`: `master` is protected. Push the branch, open a pull request
   (`gh pr create`), and merge it with `gh pr merge --merge` (never squash, never rebase) once the
-  `CI result` check passes and the branch is up to date with `master`. Do not pass
-  `--delete-branch` from a worktree; delete the branch after removing the worktree.
+  required check (the record's `ci-check`, default `CI result`) passes and the branch is up to
+  date with `master`. Do not pass `--delete-branch` from a worktree; delete the branch after
+  removing the worktree.
 - No file: follow the repository's `CLAUDE.md`; if it says nothing, ask before merging, and suggest
   `/personal-rules:check`.
 
@@ -90,5 +91,5 @@ private details (code, docs, comments, test data, images). Put such facts in `CL
 For Android (Kotlin), Rust, Go and C++ (Qt/CMake) code, the `personal-rules` skill for that
 language holds the build and code rules; load it before changing code there. A repository has one
 main language (it holds the version) and may have components in sub-folders, such as an Android or
-iOS app on a Rust or Go core (`components:` in `.github/personal-rules.yml`); load the skill of
-each part you change.
+iOS app or a TV port on a Rust or Go core (`components:` in `.github/personal-rules.yml`); load
+the skill of each part you change.

@@ -5,10 +5,16 @@ stage: early                # early: merge locally, no CI | established: PR-only
 language: __LANGUAGE__      # the main language, which holds the version: android | rust | go | cpp | none
 features: []                # any of: ci, release, changelog, dependabot, license
 release-environment: release  # GitHub environment holding the signing secrets; '' = repository secrets
+# Features whose workflow the repository writes itself (ci, release): check audits what the rules
+# rely on, and never replaces the file with the template.
+custom: []
+# ci-check: CI result       # the check branch protection requires, when not "CI result"
 # Other parts of the repository, each in its own folder, built on the main code:
 # components:
 #   - name: android         # job and artifact name
-#     language: android     # android | ios
-#     path: apps/android    # the folder holding gradlew (android) or build.sh (ios)
+#     language: android     # android | ios | other
+#     path: apps/android    # the folder holding gradlew (android) or build.sh (ios); for other,
+#                           # one or more paths separated by spaces, the main folder first
 #     native: rust          # android only: the native library it bundles: rust | go | none
+#     build: bash tools/port/tv/build.sh   # other only: builds it without signing
 components: []
