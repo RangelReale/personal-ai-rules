@@ -1,0 +1,74 @@
+name: go-release
+
+# Cross-compiles a Go command for each target and uploads the archives as the artifact
+# release-go, for release-publish.yml to attach. Static builds: CGO_ENABLED=0, -trimpath.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version (no leading v), stamped into the version variable
+        type: string
+        required: true
+      package:
+        description: The main package to build
+        type: string
+        default: '.'
+      name:
+        description: The binary and archive name; defaults to the repository name
+        type: string
+        default: ''
+      version-variable:
+        description: The variable -ldflags -X sets to the version
+        type: string
+        default: main.version
+      targets:
+        description: GOOS/GOARCH pairs, space separated
+        type: string
+        default: linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          PACKAGE: ${{ inputs.package }}
+          NAME: ${{ inputs.name || github.event.repository.name }}
+          VERSION_VARIABLE: ${{ inputs.version-variable }}
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in $TARGETS; do
+            os=${target%/*}; arch=${target#*/}
+            dir="build/${NAME}-${VERSION}-${os}-${arch}"
+            exe=$NAME; [ "$os" = windows ] && exe="$NAME.exe"
+            mkdir -p "$dir"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X ${VERSION_VARIABLE}=${VERSION}" -o "$dir/$exe" "$PACKAGE"
+            cp README* LICENSE* "$dir/" 2>/dev/null || true
+            if [ "$os" = windows ]; then
+              (cd build && zip -qr "../dist/${dir#build/}.zip" "${dir#build/}")
+            else
+              tar -C build -czf "dist/${dir#build/}.tar.gz" "${dir#build/}"
+            fi
+          done
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-go
+          path: dist/*
+          retention-days: 1

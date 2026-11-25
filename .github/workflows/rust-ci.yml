@@ -1,0 +1,72 @@
+name: rust-ci
+
+# Rust checks: cargo fmt --check, clippy -D warnings, cargo test, all --locked.
+# The toolchain comes from rust-toolchain.toml (an exact pin), so a new lint cannot fail a branch
+# that changed nothing.
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: JSON list of runner images
+        type: string
+        default: '["ubuntu-26.04"]'
+      cargo-args:
+        description: Extra arguments for clippy and test, for example --all-features
+        type: string
+        default: ''
+      linux-packages:
+        description: apt packages to install on Linux runners (space separated)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_ARGS: ${{ inputs.cargo-args }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux packages
+        if: runner.os == 'Linux' && inputs.linux-packages != ''
+        env:
+          PACKAGES: ${{ inputs.linux-packages }}
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends $PACKAGES
+
+      # rustup reads rust-toolchain.toml.
+      - name: Toolchain
+        run: rustup toolchain install --no-self-update
+
+      # Only master saves the cache, so branches don't evict each other's.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' }}
+
+      - name: cargo fmt
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: |
+          # shellcheck disable=SC2086
+          cargo clippy --workspace --all-targets --locked $CARGO_ARGS -- -D warnings
+
+      - name: cargo test
+        run: |
+          # shellcheck disable=SC2086
+          cargo test --workspace --locked $CARGO_ARGS

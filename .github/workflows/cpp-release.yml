@@ -1,0 +1,119 @@
+name: cpp-release
+
+# Builds, tests and packages a C++/Qt/CMake project with cpack on each preset, with the tag's
+# version, and uploads the packages as artifacts release-cpp-<preset>. Notarisation and Developer ID
+# signing are project-specific: run them in a job of your own, in a protected `release` environment,
+# with its actions pinned to commits.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      version-define:
+        description: >-
+          The CMake cache variable that overrides project(VERSION), set to X.Y.Z, for example
+          FAVDIR_VERSION. Empty: the tag must match project(VERSION) (release-check.yml).
+        type: string
+        default: ''
+      matrix:
+        description: JSON list of {os, preset, setup}, as in cpp-ci.yml; the build config is Release
+        type: string
+        default: >-
+          [
+            {"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"},
+            {"os": "macos-26", "preset": "macos", "setup": "sh scripts/setup.sh"}
+          ]
+      packages:
+        description: Globs, relative to build/<preset>, of the packages cpack makes
+        type: string
+        default: '*.exe *.dmg *.deb *.AppImage *.zip *.tar.gz'
+      linux-packages:
+        type: string
+        default: libgl1-mesa-dev libxkbcommon-dev libxcb-cursor0 ninja-build
+      qt-cache-key:
+        type: string
+        default: scripts/setup.*
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CTEST_PARALLEL_LEVEL: 4
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.3
+
+      - name: Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Packages (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PACKAGES: ${{ inputs.linux-packages }}
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends $PACKAGES
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache Qt
+        uses: actions/cache@v6
+        with:
+          path: .qt
+          key: qt-${{ runner.os }}-${{ hashFiles(inputs.qt-cache-key) }}
+
+      - name: Download Qt
+        run: ${{ matrix.setup }}
+
+      # bash, not PowerShell: PowerShell splits -DX_VERSION=1.2.3 at the first dot.
+      - name: Configure
+        shell: bash
+        env:
+          PRESET: ${{ matrix.preset }}
+          VERSION: ${{ inputs.version }}
+          VERSION_DEFINE: ${{ inputs.version-define }}
+        run: |
+          args=(--preset "$PRESET")
+          if [ -n "$VERSION_DEFINE" ]; then args+=("-D${VERSION_DEFINE}=${VERSION%%-*}"); fi
+          cmake "${args[@]}"
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} --config Release
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} -C Release
+
+      - name: Package
+        shell: bash
+        working-directory: build/${{ matrix.preset }}
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          cpack -C Release
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          shopt -s nullglob
+          # shellcheck disable=SC2086
+          for f in $PACKAGES; do cp "$f" "$GITHUB_WORKSPACE/dist/"; done
+          ls -l "$GITHUB_WORKSPACE/dist"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-cpp-${{ matrix.preset }}
+          path: dist/*
+          retention-days: 1
+          if-no-files-found: error

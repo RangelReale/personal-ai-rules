@@ -1,0 +1,98 @@
+name: android-release
+
+# Builds the signed release APK with the tag's version and uploads it as the artifact
+# release-android (<repository>-v<version>.apk), for release-publish.yml to attach.
+# Gradle reads the version from -PappVersion and the signing config from SIGNING_* variables;
+# versionCode is MAJOR*10000 + MINOR*100 + PATCH (see the android skill).
+# A debug-signed APK is never published: missing secrets fail the job.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      java-version:
+        type: string
+        default: '21'
+      gradle-task:
+        type: string
+        default: assembleRelease
+      apk:
+        description: The APK Gradle produces
+        type: string
+        default: app/build/outputs/apk/release/app-release.apk
+    secrets:
+      keystore-base64:
+        description: The release keystore, base64-encoded (repository secret ANDROID_KEYSTORE_BASE64)
+        required: true
+      keystore-password:
+        required: true
+      key-alias:
+        required: true
+      key-password:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.keystore-base64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The ANDROID_KEYSTORE_BASE64 secret is missing; a release APK must be signed."
+            exit 1
+          fi
+          umask 077
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build
+        env:
+          VERSION: ${{ inputs.version }}
+          TASK: ${{ inputs.gradle-task }}
+          SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.keystore-password }}
+          SIGNING_KEY_ALIAS: ${{ secrets.key-alias }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.key-password }}
+        run: |
+          chmod +x gradlew
+          ./gradlew "$TASK" "-PappVersion=$VERSION"
+
+      - name: Verify the signature
+        env:
+          APK: ${{ inputs.apk }}
+          VERSION: ${{ inputs.version }}
+          NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          apksigner=$(printf '%s\n' "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$APK"
+          mkdir -p dist
+          cp "$APK" "dist/${NAME}-v${VERSION}.apk"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: dist/*.apk
+          retention-days: 1
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"

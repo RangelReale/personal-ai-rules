@@ -1,0 +1,52 @@
+name: android-ci
+
+# Android checks: unit tests, lint and a debug build, the same command as local work.
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        type: string
+        default: '21'
+      gradle-tasks:
+        type: string
+        default: testDebugUnitTest lintDebug assembleDebug
+      working-directory:
+        description: Directory holding gradlew
+        type: string
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Gradle
+        env:
+          TASKS: ${{ inputs.gradle-tasks }}
+        run: |
+          chmod +x gradlew
+          # shellcheck disable=SC2086
+          ./gradlew $TASKS
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: reports
+          path: ${{ inputs.working-directory }}/**/build/reports/
+          retention-days: 7

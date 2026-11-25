@@ -1,0 +1,87 @@
+name: rust-release
+
+# Builds release binaries of a Rust package on each runner and uploads the archives as artifacts
+# release-rust-<os>, for release-publish.yml to attach. Installers, signing and mobile builds are
+# project-specific: add jobs of your own that upload release-* artifacts.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      package:
+        description: The cargo package to build (-p); empty builds the workspace's default members
+        type: string
+        default: ''
+      bins:
+        description: Binary names to put in the archive, space separated; defaults to the repository name
+        type: string
+        default: ''
+      os:
+        description: JSON list of runner images
+        type: string
+        default: '["ubuntu-26.04", "windows-2025", "macos-26"]'
+      linux-packages:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux packages
+        if: runner.os == 'Linux' && inputs.linux-packages != ''
+        env:
+          PACKAGES: ${{ inputs.linux-packages }}
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends $PACKAGES
+
+      - name: Toolchain
+        run: rustup toolchain install --no-self-update
+
+      - name: Build and archive
+        env:
+          VERSION: ${{ inputs.version }}
+          PACKAGE: ${{ inputs.package }}
+          BINS: ${{ inputs.bins || github.event.repository.name }}
+          NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          args=(--release --locked)
+          if [ -n "$PACKAGE" ]; then args+=(-p "$PACKAGE"); fi
+          cargo build "${args[@]}"
+          triple=$(rustc -vV | sed -n 's/^host: //p')
+          dir="${NAME}-${VERSION}-${triple}"
+          mkdir -p "build/$dir" dist
+          for bin in $BINS; do
+            if [ "$RUNNER_OS" = Windows ]; then cp "target/release/$bin.exe" "build/$dir/"
+            else cp "target/release/$bin" "build/$dir/"; fi
+          done
+          cp README* LICENSE* "build/$dir/" 2>/dev/null || true
+          if [ "$RUNNER_OS" = Windows ]; then
+            (cd build && 7z a -tzip "../dist/$dir.zip" "$dir" > /dev/null)
+          else
+            tar -C build -czf "dist/$dir.tar.gz" "$dir"
+          fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-rust-${{ matrix.os }}
+          path: dist/*
+          retention-days: 1

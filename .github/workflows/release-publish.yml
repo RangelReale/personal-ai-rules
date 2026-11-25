@@ -1,0 +1,102 @@
+name: release-publish
+
+# Publishes the GitHub release for a checked tag (see release-check.yml) and attaches the files
+# that earlier jobs of the same run uploaded as artifacts named release-*.
+# Notes: the version's section of CHANGELOG.md, else GitHub's generated notes.
+# Re-running it for an existing release replaces the attached files.
+# The caller's job needs `permissions: contents: write`.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      prerelease:
+        type: string
+        default: 'false'
+      title:
+        description: Release title; defaults to "<repository name> <version>"
+        type: string
+        default: ''
+      assets:
+        description: Download release-* artifacts and attach them, with a SHA256SUMS.txt
+        type: boolean
+        default: true
+      changelog:
+        description: The changelog whose "## [X.Y.Z]" section becomes the notes
+        type: string
+        default: CHANGELOG.md
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/download-artifact@v8
+        if: inputs.assets
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Notes
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/notes.md"
+          if [ -f "$CHANGELOG" ]; then
+            awk -v v="$VERSION" '
+              /^## / { if (found) exit; if (index($0, "[" v "]")) { found = 1; next } }
+              found { print }
+            ' "$CHANGELOG" | sed -e '/./,$!d' > "$RUNNER_TEMP/notes.md"
+          fi
+          if [ -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "Notes from $CHANGELOG:"; cat "$RUNNER_TEMP/notes.md"
+          else
+            echo "No $CHANGELOG section for $VERSION: GitHub generates the notes."
+          fi
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          TITLE: ${{ inputs.title }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          files=()
+          if [ -d dist ] && [ -n "$(ls -A dist)" ]; then
+            (cd dist && sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS.txt")
+            mv "$RUNNER_TEMP/SHA256SUMS.txt" dist/
+            for f in dist/*; do files+=("$f"); done
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists already; replacing its files."
+            if [ ${#files[@]} -gt 0 ]; then gh release upload "$TAG" "${files[@]}" --clobber; fi
+            exit 0
+          fi
+          args=(--verify-tag --title "${TITLE:-$REPO_NAME $VERSION}")
+          if [ -s "$RUNNER_TEMP/notes.md" ]; then
+            args+=(--notes-file "$RUNNER_TEMP/notes.md")
+          else
+            args+=(--generate-notes)
+          fi
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+          gh release create "$TAG" "${args[@]}" "${files[@]}"
