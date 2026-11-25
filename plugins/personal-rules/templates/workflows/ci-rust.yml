@@ -29,17 +29,26 @@ jobs:
     uses: RangelReale/personal-ai-rules/.github/workflows/changes.yml@__RULES_REF__
     with:
       version-files: Cargo.toml
-      # Components (see ci-component-*.yml), one per line: <name>: <folder>
+      # More paths that never need a build (docs, *.md, .claude/, issue templates and editor
+      # settings are built in):
+      # ignore: site/ tools/dev/ Taskfile.yml
+      # Components (see ci-component-*.yml), one per line: <name>: <paths>
       # components: |
       #   android: apps/android
+      # Signals for jobs only some files need, one per line: <name>: <paths>
+      groups: |
+        deps: Cargo.lock deny.toml
 
   build:
     needs: changes
     if: needs.changes.outputs.main == 'true'
     uses: RangelReale/personal-ai-rules/.github/workflows/rust-ci.yml@__RULES_REF__
-    # with:
-    #   os: '["ubuntu-26.04", "windows-2025", "macos-26"]'
-    #   linux-packages: libasound2-dev
+    with:
+      full: ${{ needs.changes.outputs.full }}  # all platforms only when it matters
+      # cargo deny (needs deny.toml) when the dependencies change.
+      deny: ${{ contains(fromJSON(needs.changes.outputs.groups), 'deps') }}
+      # os: '["ubuntu-26.04", "windows-2025", "macos-26"]'   # the full matrix
+      # linux-packages: libasound2-dev
 
   # Fragments in changelog.d/; passes when the repository keeps none.
   changelog:

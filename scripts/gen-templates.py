@@ -26,7 +26,10 @@ ENVIRONMENT = """      # GitHub environment with the signing secrets ('' = repos
 """
 
 LANGS = {
-    "go": {"version_files": "", "ci_with": "", "release_build": f"""  build:
+    "go": {"version_files": "", "groups": "", "ci_with": """    with:
+      full: ${{ needs.changes.outputs.full }}  # all platforms only when it matters
+      # os: '["ubuntu-26.04", "windows-2025", "macos-26"]'   # the full matrix
+""", "release_build": f"""  build:
     needs: check
     uses: {REPO}/go-release.yml@{REF}
     with:
@@ -34,9 +37,12 @@ LANGS = {
       # package: ./cmd/<name>      # the main package, if not the repository root
       # A library has no binaries: delete this job and `build` from publish's needs.
 """},
-    "rust": {"version_files": "Cargo.toml", "ci_with": """    # with:
-    #   os: '["ubuntu-26.04", "windows-2025", "macos-26"]'
-    #   linux-packages: libasound2-dev
+    "rust": {"version_files": "Cargo.toml", "groups": "deps: Cargo.lock deny.toml", "ci_with": """    with:
+      full: ${{ needs.changes.outputs.full }}  # all platforms only when it matters
+      # cargo deny (needs deny.toml) when the dependencies change.
+      deny: ${{ contains(fromJSON(needs.changes.outputs.groups), 'deps') }}
+      # os: '["ubuntu-26.04", "windows-2025", "macos-26"]'   # the full matrix
+      # linux-packages: libasound2-dev
 """, "release_build": f"""  build:
     needs: check
     uses: {REPO}/rust-release.yml@{REF}
@@ -44,21 +50,23 @@ LANGS = {
       version: ${{{{ needs.check.outputs.version }}}}
       # bins: <binary names>       # defaults to the repository name
 """},
-    "android": {"version_files": "", "ci_with": "", "release_build": f"""  build:
+    "android": {"version_files": "", "groups": "", "ci_with": "", "release_build": f"""  build:
     needs: check
     uses: {REPO}/android-release.yml@{REF}
     with:
       version: ${{{{ needs.check.outputs.version }}}}
 {ENVIRONMENT}"""},
-    "cpp": {"version_files": "CMakeLists.txt", "ci_with": """    # with:
-    #   matrix: '[{"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"}]'
+    "cpp": {"version_files": "CMakeLists.txt", "groups": "", "ci_with": """    with:
+      full: ${{ needs.changes.outputs.full }}  # all platforms only when it matters
+      # Without a linux preset, the quick matrix is the Windows build:
+      # quick-matrix: '[{"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"}]'
 """, "release_build": f"""  build:
     needs: check
     uses: {REPO}/cpp-release.yml@{REF}
     with:
       version: ${{{{ needs.check.outputs.version }}}}
 """},
-    "generic": {"version_files": "", "ci_with": None, "release_build": """  # Build the release files here and upload them as artifacts named release-*;
+    "generic": {"version_files": "", "groups": "", "ci_with": None, "release_build": """  # Build the release files here and upload them as artifacts named release-*;
   # publish attaches them. Without files, delete this job and `build` from publish's needs.
   build:
     needs: check
@@ -143,13 +151,24 @@ RELEASE_COMPONENTS = {
 
 def ci(lang, cfg):
     vf = cfg["version_files"]
-    components = ("      # Components (see ci-component-*.yml), one per line: <name>: <folder>\n"
-                  "      # components: |\n"
-                  "      #   android: apps/android\n")
+    lines = []
     if vf:
-        changes_with = f"    with:\n      version-files: {vf}\n" + components
+        lines.append(f"      version-files: {vf}")
+    lines += [
+        "      # More paths that never need a build (docs, *.md, .claude/, issue templates and editor",
+        "      # settings are built in):",
+        "      # ignore: site/ tools/dev/ Taskfile.yml",
+        "      # Components (see ci-component-*.yml), one per line: <name>: <paths>",
+        "      # components: |",
+        "      #   android: apps/android",
+        "      # Signals for jobs only some files need, one per line: <name>: <paths>",
+    ]
+    if cfg["groups"]:
+        lines += ["      groups: |", f"        {cfg['groups']}"]
     else:
-        changes_with = "    # with:\n" + components
+        lines += ["      # groups: |", "      #   assets: assets/"]
+    active = [line for line in lines if not line.lstrip().startswith("#")]
+    changes_with = ("    with:\n" if active else "    # with:\n") + "\n".join(lines) + "\n"
     if cfg["ci_with"] is None:
         build = """  # The project's own checks; they run only when the main code changed.
   build:

@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
 - Always-on rules injected at session start: worktrees, Conventional Commits, merging by stage
   (early or established), releases, changelog fragments, no local paths, push notifications.
 - Language skills for Android (Kotlin), Rust, Go and C++ (Qt/CMake).
+- Faster CI: per-repository path rules (`ignore`, `components`, `groups`), Linux-only pull
+  request builds with the full matrix on master and toolchain or lockfile changes, ccache for C++,
+  and `cargo deny` only when dependencies change.
 - Signing secrets in an optional GitHub environment, `release` by default in new repositories.
 - Multi-language repositories: a main language plus Android and iOS components, each with its own
   CI and release job that runs when its folder or the main code changed.

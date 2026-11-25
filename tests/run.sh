@@ -58,11 +58,13 @@ echo "# Changelog" > CHANGELOG.md
 echo "- x" > changelog.d/x.added.md
 git add -A && git commit -qm base
 base=$(git rev-parse HEAD)
-# Prints "<kind> <main> <components>".
+# Prints "<kind> <main> <components>", or the outputs named in $OUT (a sed alternation).
 classify() {
   EVENT=${EVENT:-pull_request} PR_BASE=$base BEFORE=${BEFORE:-} VERSION_FILES=$'Cargo.toml\n' \
-    COMPONENTS=$'android: apps/android\nios: ports/ios' CODE_PATHS=plugins/ GITHUB_OUTPUT=/dev/stdout \
-    bash "$tmp/classify.sh" | sed -n 's/^\(kind\|main\|components\)=//p' | tr '\n' ' ' | sed 's/ $//'
+    PATH_COMPONENTS=$'android: apps/android\nios: ports/ios\nweb: web/*.ts' CODE_PATHS=plugins/ \
+    IGNORE='site/ Taskfile.yml' PATH_GROUPS=$'deps: Cargo.lock deny.toml\nassets: assets/' FULL_PATHS='' \
+    DEFAULT_BRANCH=master GITHUB_REF=${GITHUB_REF:-refs/pull/1/merge} GITHUB_OUTPUT=/dev/stdout \
+    bash "$tmp/classify.sh" | sed -n "s/^\(${OUT:-kind\|main\|components}\)=//p" | tr '\n' ' ' | sed 's/ $//'
   git reset -q --hard "$base"
 }
 echo doc > docs/a.md && echo r > README.md && git add -A && git commit -qm d
@@ -85,7 +87,25 @@ expect "component only" "$(classify)" 'code false ["android"]'
 echo more >> plugins/p/SKILL.md && git add -A && git commit -qm p
 expect "markdown in code-paths" "$(classify)" 'code true []'
 echo more >> src/main.rs && git add -A && git commit -qm first
-expect "first push builds all" "$(EVENT=push BEFORE=0000000000000000000000000000000000000000 classify)" 'code true ["android","ios"]'
+expect "first push builds all" "$(EVENT=push BEFORE=0000000000000000000000000000000000000000 classify)" 'code true ["android","ios","web"]'
+mkdir -p .github/ISSUE_TEMPLATE site .claude && echo x > .github/ISSUE_TEMPLATE/bug.yml
+echo x > site/index.html && echo x > Taskfile.yml && echo x > .claude/settings.json && echo x > .editorconfig
+git add -A && git commit -qm ignored
+expect "built-in and extra ignores" "$(classify)" 'docs false []'
+mkdir -p web && echo x > web/app.ts && git add -A && git commit -qm web
+expect "component by pattern" "$(classify)" 'code false ["web"]'
+echo x > deny.toml && mkdir -p assets && echo x > assets/a.png && git add -A && git commit -qm g
+expect "groups" "$(OUT='groups\|main' classify)" 'true ["assets","deps"]'
+echo more >> src/main.rs && git add -A && git commit -qm pr
+expect "pull request: small matrix" "$(OUT=full classify)" false
+sed -i 's/0.4.1/0.4.2/' Cargo.lock && git add -A && git commit -qm lock2
+expect "lockfile: full matrix" "$(OUT='full\|groups' classify)" '["deps"] true'
+mkdir -p .github/workflows && echo x > .github/workflows/ci.yml && git add -A && git commit -qm wf
+expect "workflow: full matrix" "$(OUT=full classify)" true
+echo more >> src/main.rs && git add -A && git commit -qm push
+expect "push to master: full matrix" "$(EVENT=push BEFORE=$base GITHUB_REF=refs/heads/master OUT=full classify)" true
+echo doc >> README.md && git add -A && git commit -qm pushdoc
+expect "docs push to master: no build" "$(EVENT=push BEFORE=$base GITHUB_REF=refs/heads/master OUT='kind\|full' classify)" 'docs false'
 
 # --- changelog.sh and the notes release-publish.yml extracts
 mkdir -p "$tmp/l/changelog.d" && cd "$tmp/l" || exit 1

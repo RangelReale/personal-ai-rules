@@ -6,7 +6,17 @@ on:
   workflow_call:
     inputs:
       os:
-        description: JSON list of runner images
+        description: JSON list of runner images (the full matrix)
+        type: string
+        default: '["ubuntu-26.04"]'
+      full:
+        description: >-
+          'false' runs only quick-os (pull requests that change no workflow, toolchain or lockfile:
+          the `full` output of changes.yml); anything else runs `os`
+        type: string
+        default: 'true'
+      quick-os:
+        description: JSON list of runner images when full is 'false'
         type: string
         default: '["ubuntu-26.04"]'
       working-directory:
@@ -26,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.os) }}
+        os: ${{ fromJSON(inputs.full == 'false' && inputs.quick-os || inputs.os) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:

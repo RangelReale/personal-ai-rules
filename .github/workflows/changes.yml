@@ -1,36 +1,58 @@
 name: changes
 
-# Classifies a push or pull request, so callers can skip expensive builds:
-#   kind=docs     only documentation (*.md, docs/, LICENSE*) changed
-#   kind=version  only the project's version and the changelog changed (a release's version change)
-#   kind=code     anything else (and always for a first push, a force-push, schedule or dispatch)
-# For a repository with components (an Android app in apps/android next to a Rust workspace),
-# it also says which parts the code changes touched:
-#   main=true            code outside every component folder changed (the main language's code)
-#   components=[...]     JSON list of the components whose folders have code changes
-# A component job usually runs on `main == 'true' || contains(fromJSON(components), '<name>')`,
-# since components build on the main code.
+# Classifies a push or pull request, so callers run only the jobs a change needs:
+#   kind=docs        nothing that builds changed: documentation, and the paths in `ignore` and in
+#                    the built-in ignore list (editor settings, issue templates, .claude/, …)
+#   kind=version     only the project's version and the changelog changed (a release's version change)
+#   kind=code        anything else (always for a first push, a force-push, a schedule or a dispatch)
+#   main=true        code outside every component changed (the main language's code)
+#   components=[…]   JSON list of the components whose paths have code changes
+#   groups=[…]       JSON list of the groups whose paths have code changes (for jobs that only some
+#                    files need: dependency audits on lockfiles, asset builds on assets/, …)
+#   full=true        a change that can break any platform: workflows, toolchain pins, lockfiles, the
+#                    paths in `full-paths`; also every push to the default branch. Callers can run
+#                    the whole platform matrix on `full` and a smaller one otherwise.
 # A job-level `if` keeps the required check reporting, unlike workflow `paths-ignore`.
+#
+# Paths, here and in every input: one or more per line or separated by spaces, relative to the
+# repository root. A path without wildcards is a file or a folder (`apps/android` covers everything
+# below it); with wildcards it is a bash pattern in which `*` also crosses folders (`*.md` is any
+# Markdown file, `assets/*.png` any PNG below assets/).
 on:
   workflow_call:
     inputs:
       version-files:
         description: >-
-          Manifests, one per line, that hold the project's version (Cargo.toml, CMakeLists.txt,
-          plugin.json, VERSION). A change is version-only when these change only their own version
-          line and Cargo.lock only the matching version lines.
+          Manifests that hold the project's version (Cargo.toml, CMakeLists.txt, plugin.json,
+          VERSION). A change is version-only when these change only their own version line and
+          Cargo.lock only the matching version lines.
+        type: string
+        default: ''
+      ignore:
+        description: >-
+          More paths that never need a build, on top of the built-in list, for example
+          "site/ tools/dev/ Taskfile.yml screenshots/".
+        type: string
+        default: ''
+      code-paths:
+        description: Paths that are code even when they match an ignore rule (plugins/ for a plugin made of Markdown skills)
         type: string
         default: ''
       components:
         description: >-
-          Components, one per line, as "<name>: <folder> [<folder>...]" relative to the repository
-          root, for example "android: apps/android".
+          Components, one per line, as "<name>: <paths>", for example "android: apps/android".
+          Changes there do not count as main code.
         type: string
         default: ''
-      code-paths:
+      groups:
         description: >-
-          Folders, space or newline separated, whose files are code even when they are Markdown
-          (for example plugins/ for a plugin made of skills).
+          Groups, one per line, as "<name>: <paths>", for example
+          "deps: Cargo.lock deny.toml" or "assets: assets/". Files in a group still count as main
+          code; the group only adds a signal.
+        type: string
+        default: ''
+      full-paths:
+        description: More paths that need the whole platform matrix, on top of the built-in list
         type: string
         default: ''
     outputs:
@@ -41,11 +63,17 @@ on:
         description: "'true' unless only docs or version strings changed"
         value: ${{ jobs.classify.outputs.code }}
       main:
-        description: "'true' when code outside the component folders changed"
+        description: "'true' when code outside the components changed"
         value: ${{ jobs.classify.outputs.main }}
       components:
         description: JSON list of the components with code changes, for example ["android"]
         value: ${{ jobs.classify.outputs.components }}
+      groups:
+        description: JSON list of the groups with code changes, for example ["deps"]
+        value: ${{ jobs.classify.outputs.groups }}
+      full:
+        description: "'true' when the whole platform matrix should run"
+        value: ${{ jobs.classify.outputs.full }}
 
 permissions:
   contents: read
@@ -59,6 +87,8 @@ jobs:
       code: ${{ steps.classify.outputs.code }}
       main: ${{ steps.classify.outputs.main }}
       components: ${{ steps.classify.outputs.components }}
+      groups: ${{ steps.classify.outputs.groups }}
+      full: ${{ steps.classify.outputs.full }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,11 +100,66 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           BEFORE: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           VERSION_FILES: ${{ inputs.version-files }}
-          COMPONENTS: ${{ inputs.components }}
+          IGNORE: ${{ inputs.ignore }}
           CODE_PATHS: ${{ inputs.code-paths }}
+          PATH_COMPONENTS: ${{ inputs.components }}
+          PATH_GROUPS: ${{ inputs.groups }}
+          FULL_PATHS: ${{ inputs.full-paths }}
         run: |
           set -euo pipefail
+          set -f  # path patterns are matched against changed files, never expanded
+
+          # Paths that never need a build.
+          builtin_ignore='*.md docs/ LICENSE LICENSE-* COPYING .gitignore .editorconfig
+            .vscode/ .idea/ .claude/ .github/ISSUE_TEMPLATE/ .github/dependabot.yml
+            .github/personal-rules.yml .github/release.yml .github/CODEOWNERS .github/FUNDING.yml'
+          # Paths whose change can break any platform.
+          builtin_full='.github/workflows/ .github/actions/ rust-toolchain.toml rust-toolchain
+            Cargo.lock go.mod go.sum gradle/libs.versions.toml gradle/wrapper/ CMakePresets.json
+            .gitattributes'
+
+          # matches <file> <paths...>: whether the file is one of the paths, below one, or matches a pattern.
+          matches() {
+            local file=$1 p
+            shift
+            for p in "$@"; do
+              case "$p" in
+                *[*?[]*) # shellcheck disable=SC2053
+                  [[ "$file" == $p ]] && return 0 ;;
+                *)
+                  p=${p%/}
+                  [ "$file" = "$p" ] && return 0
+                  case "$file" in "$p"/*) return 0 ;; esac ;;
+              esac
+            done
+            return 1
+          }
+          # named <file> <"name: paths" lines>: the names whose paths match the file.
+          named() {
+            local file=$1 line name paths
+            while IFS= read -r line; do
+              [ -z "${line//[[:space:]]/}" ] && continue
+              name=${line%%:*}; name=${name//[[:space:]]/}
+              paths=${line#*:}
+              # shellcheck disable=SC2086
+              if matches "$file" $paths; then echo "$name"; fi
+            done <<< "$2"
+          }
+          names() {
+            local line name
+            while IFS= read -r line; do
+              [ -z "${line//[[:space:]]/}" ] && continue
+              name=${line%%:*}; echo "${name//[[:space:]]/}"
+            done <<< "$1"
+          }
+          json() { { grep -v '^$' || true; } | sort -u | jq -R . | jq -sc .; }
+          changed_lines() {
+            git diff -U0 "$base" HEAD -- "$1" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ' | cut -c2- || true
+          }
+          semver='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
+
           # Compare with the pull request's base or the previous tip of the pushed branch. A first
           # push, a force-push, a schedule or a manual run builds everything.
           base=""
@@ -85,43 +170,18 @@ jobs:
             base="$BEFORE"
           fi
           if [ -n "$base" ] && [ "$(git rev-parse "$base")" = "$(git rev-parse HEAD)" ]; then base=""; fi
+          default_push=false
+          if [ "$EVENT" = push ] && [ "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" ]; then default_push=true; fi
 
-          # The component a path belongs to; nothing for the main code.
-          component_of() {
-            local line name p
-            while IFS= read -r line; do
-              [ -z "${line//[[:space:]]/}" ] && continue
-              name=$(echo "${line%%:*}" | tr -d '[:space:]')
-              for p in ${line#*:}; do
-                p=${p%/}
-                case "$1" in "$p" | "$p"/*) echo "$name"; return ;; esac
-              done
-            done <<< "$COMPONENTS"
-          }
-          in_code_paths() {
-            local p
-            for p in $CODE_PATHS; do
-              p=${p%/}
-              case "$1" in "$p" | "$p"/*) return 0 ;; esac
-            done
-            return 1
-          }
-          # The changed lines (without the +/- marker) of a file.
-          changed_lines() {
-            git diff -U0 "$base" HEAD -- "$1" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ' | cut -c2- || true
-          }
-          semver='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
-          all_components=$(while IFS= read -r line; do
-            if [ -n "${line//[[:space:]]/}" ]; then n=${line%%:*}; echo "${n//[[:space:]]/}"; fi
-          done <<< "$COMPONENTS")
-
-          kind=code main=true changed=$all_components
+          kind=code main=true full=true
+          components=$(names "$PATH_COMPONENTS") groups=$(names "$PATH_GROUPS")
           if [ -n "$base" ]; then
             files=$(git diff --name-only "$base" HEAD)
-            vfiles=$(printf '%s\n' "$VERSION_FILES" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
-            version=0 code=0 main=false changed="" versions=""
+            vfiles=$(printf '%s\n' "$VERSION_FILES" | tr -s '[:space:]' '\n' | grep -v '^$' || true)
+            version=0 code=0 main=false full=false components="" groups=""
             # Manifests: only their own version line may change, e.g. `version = "1.2.0"` under
             # [package], `"version": "1.2.0"`, `VERSION 1.2.0` in project(), or the bare version.
+            versions=""
             while IFS= read -r file; do
               [ -z "$file" ] && continue
               grep -qxF -- "$file" <<< "$vfiles" || continue
@@ -129,48 +189,61 @@ jobs:
               [ -z "$lines" ] && continue
               bad=$(printf '%s\n' "$lines" | grep -vcE "^[[:space:]]*(version[[:space:]]*=[[:space:]]*\"$semver\"|\"version\"[[:space:]]*:[[:space:]]*\"$semver\",?|(project\([^)]*)?VERSION[[:space:]]+$semver.*|$semver)[[:space:]]*\$" || true)
               if grep -qiE 'cmake_minimum_required|rust-version' <<< "$lines"; then bad=1; fi
-              if [ "$bad" -gt 0 ]; then code=1 main=true; else
-                version=1
-                versions=$(printf '%s\n%s' "$versions" "$(printf '%s\n' "$lines" | grep -oE "$semver")")
+              if [ "$bad" -eq 0 ]; then
+                versions=$(printf '%s\n%s' "$versions" "$(grep -oE "$semver" <<< "$lines")")
               fi
             done <<< "$files"
+
             while IFS= read -r file; do
               [ -z "$file" ] && continue
-              if grep -qxF -- "$file" <<< "$vfiles"; then continue; fi
-              if [ "${file##*/}" = Cargo.lock ]; then
-                # Only `version = "<a version the manifests changed>"` lines.
-                lines=$(changed_lines "$file")
-                bad=0
+              if grep -qxF -- "$file" <<< "$vfiles" || [ "${file##*/}" = Cargo.lock ]; then
+                # Version-only when every changed line is a version line the manifests changed.
+                only_version=1
                 while IFS= read -r l; do
                   [ -z "$l" ] && continue
-                  v=$(printf '%s\n' "$l" | sed -nE "s/^version = \"($semver)\"\$/\1/p")
-                  if [ -z "$v" ] || ! grep -qxF -- "$v" <<< "$versions"; then bad=1; fi
-                done <<< "$lines"
-                if [ "$bad" = 1 ]; then code=1 main=true; else version=1; fi
-                continue
+                  v=$(printf '%s\n' "$l" | grep -oE "$semver" | head -1 || true)
+                  if [ -z "$v" ] || ! grep -qxF -- "$v" <<< "$versions" \
+                      || ! grep -qE "^[[:space:]]*(version[[:space:]]*=|\"version\"[[:space:]]*:|(project\([^)]*)?VERSION[[:space:]]|$semver)" <<< "$l" \
+                      || grep -qiE 'cmake_minimum_required|rust-version' <<< "$l"; then
+                    only_version=0
+                  fi
+                done <<< "$(changed_lines "$file")"
+                if [ "$only_version" = 1 ]; then version=1; continue; fi
               fi
               case "$file" in
                 CHANGELOG.md | changelog.d/*) version=1; continue ;;
               esac
-              if ! in_code_paths "$file"; then
-                case "$file" in *.md | docs/* | LICENSE*) continue ;; esac
+              # shellcheck disable=SC2086
+              if ! matches "$file" $CODE_PATHS && matches "$file" $builtin_ignore $IGNORE; then
+                continue
               fi
               code=1
-              c=$(component_of "$file")
-              if [ -z "$c" ]; then main=true; else changed=$(printf '%s\n%s' "$changed" "$c"); fi
+              c=$(named "$file" "$PATH_COMPONENTS" | head -1)
+              if [ -z "$c" ]; then main=true; else components=$(printf '%s\n%s' "$components" "$c"); fi
+              groups=$(printf '%s\n%s' "$groups" "$(named "$file" "$PATH_GROUPS")")
+              # shellcheck disable=SC2086
+              if matches "$file" $builtin_full $FULL_PATHS; then full=true; fi
             done <<< "$files"
             if [ "$code" = 1 ]; then kind=code
             elif [ "$version" = 1 ]; then kind=version
             else kind=docs
             fi
           fi
-          if [ "$kind" != code ]; then main=false changed=""; fi
+          if [ "$kind" = code ] && [ "$default_push" = true ]; then full=true; fi
+          if [ "$kind" != code ]; then main=false full=false components="" groups=""; fi
           code=$([ "$kind" = code ] && echo true || echo false)
-          components_json=$(printf '%s\n' "$changed" | { grep -v '^$' || true; } | sort -u | jq -R . | jq -sc .)
+          components_json=$(printf '%s\n' "$components" | json)
+          groups_json=$(printf '%s\n' "$groups" | json)
           {
             echo "kind=$kind"
             echo "code=$code"
             echo "main=$main"
             echo "components=$components_json"
+            echo "groups=$groups_json"
+            echo "full=$full"
           } >> "$GITHUB_OUTPUT"
-          echo "Change kind: $kind; main code: $main; components: $components_json"
+          {
+            echo "### Changes"
+            echo "kind: \`$kind\` · main code: \`$main\` · components: \`$components_json\` · groups: \`$groups_json\` · full matrix: \`$full\`"
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "Changes: kind=$kind main=$main components=$components_json groups=$groups_json full=$full"

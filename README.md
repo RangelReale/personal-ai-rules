@@ -126,6 +126,26 @@ Project callers live in [`templates/workflows`](plugins/personal-rules/templates
 | `go-release.yml`, `rust-release.yml`, `android-release.yml`, `cpp-release.yml` | Release files, uploaded as `release-*` artifacts |
 | `release-publish.yml` | Creates the GitHub release with the changelog section as notes and attaches the files |
 
+### Running only what a change needs
+
+CI speed is the point of `changes.yml`; every caller gates its jobs on it:
+
+- **Skipped entirely:** documentation and other files no build reads (built in: `*.md`, `docs/`,
+  `LICENSE*`, `.claude/`, editor settings, issue templates, `dependabot.yml`; plus the repository's
+  `ignore` paths such as `site/` or `tools/dev/`), and version-only changes (a release's version
+  bump and changelog).
+- **Per part:** a component's job runs when its folder or the main code changed; the main build
+  runs only when the main code changed.
+- **Per signal:** `groups` gate jobs that only some files need, such as `cargo deny` on
+  `Cargo.lock`/`deny.toml`.
+- **Smaller matrix on pull requests:** pull requests build on Linux; the whole platform matrix runs
+  on pushes to master and on changes that can break one platform (workflows, toolchain pins,
+  lockfiles, `CMakePresets.json`).
+- **Caches** are written only from master (Rust, C++ ccache), so pull requests don't evict them.
+
+`/personal-rules:add-ci` and `/personal-rules:check` survey the tree and propose the path rules
+for each repository.
+
 Callers pin a tag: `uses: RangelReale/personal-ai-rules/.github/workflows/go-ci.yml@v0.1.0`. This
 repository must stay public for repositories of other owners to call them.
 
