@@ -9,7 +9,9 @@ run-name: >-
 on:
   push:
     branches: [master]
+  # labeled/unlabeled: adding the no-changelog label re-runs the changelog check.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +27,8 @@ jobs:
     uses: ./.github/workflows/changes.yml
     with:
       version-files: plugins/personal-rules/.claude-plugin/plugin.json
+      # The plugin is mostly Markdown (rules, skills), and it is the code here.
+      code-paths: plugins/ tests/ scripts/
 
   checks:
     needs: changes

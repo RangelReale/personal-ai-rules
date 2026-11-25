@@ -1,0 +1,13 @@
+# Jobs to add to release.yml for a component.
+  # iOS component __NAME__: signing needs an Apple certificate, so the default is an unsigned
+  # build that checks the release still compiles. Upload a release-* artifact to attach a file.
+  __NAME__:
+    needs: check
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: ./__PATH__/build.sh

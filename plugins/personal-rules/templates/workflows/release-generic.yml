@@ -33,6 +33,8 @@ jobs:
       #     name: release-files
       #     path: dist/*
 
+  # Component release jobs (see release-component-*.yml) go here; add each to publish's needs.
+
   publish:
     needs: [check, build]
     permissions:

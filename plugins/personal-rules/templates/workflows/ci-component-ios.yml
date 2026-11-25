@@ -1,0 +1,15 @@
+# Jobs to add to ci.yml for a component; see the header of ci-<language>.yml.
+  # iOS component __NAME__ in __PATH__: an unsigned simulator build with the component's own script.
+  __NAME__:
+    needs: changes
+    if: needs.changes.outputs.main == 'true' || contains(fromJSON(needs.changes.outputs.components), '__NAME__')
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      # Set up the main language first, for example:
+      # - uses: actions/setup-go@v7
+      #   with:
+      #     go-version-file: go.mod
+      - name: Build
+        run: ./__PATH__/build.sh

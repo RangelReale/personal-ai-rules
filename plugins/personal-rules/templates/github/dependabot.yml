@@ -10,3 +10,5 @@ updates:
         patterns: ['*']
     commit-message:
       prefix: ci
+    # No changelog fragment for action updates.
+    labels: [no-changelog]

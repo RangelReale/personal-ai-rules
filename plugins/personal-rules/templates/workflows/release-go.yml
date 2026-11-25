@@ -28,6 +28,8 @@ jobs:
       # package: ./cmd/<name>      # the main package, if not the repository root
       # A library has no binaries: delete this job and `build` from publish's needs.
 
+  # Component release jobs (see release-component-*.yml) go here; add each to publish's needs.
+
   publish:
     needs: [check, build]
     permissions:

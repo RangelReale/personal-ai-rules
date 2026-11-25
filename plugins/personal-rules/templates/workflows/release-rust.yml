@@ -29,6 +29,8 @@ jobs:
       version: ${{ needs.check.outputs.version }}
       # bins: <binary names>       # defaults to the repository name
 
+  # Component release jobs (see release-component-*.yml) go here; add each to publish's needs.
+
   publish:
     needs: [check, build]
     permissions:

@@ -1,0 +1,17 @@
+# Jobs to add to release.yml for a component.
+  __NAME__:
+    needs: check
+    uses: RangelReale/personal-ai-rules/.github/workflows/android-release.yml@__RULES_REF__
+    with:
+      version: ${{ needs.check.outputs.version }}
+      name: __NAME__
+      working-directory: __PATH__
+      native: __NATIVE__
+      # pre-build: >-
+      #   cargo ndk -t arm64-v8a -t x86_64 -P 26 -o __PATH__/app/src/main/jniLibs
+      #   build -p <ffi crate> --lib --release
+    secrets:
+      keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+      key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}

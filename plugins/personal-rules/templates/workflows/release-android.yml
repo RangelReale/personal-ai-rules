@@ -31,6 +31,8 @@ jobs:
       key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
       key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+  # Component release jobs (see release-component-*.yml) go here; add each to publish's needs.
+
   publish:
     needs: [check, build]
     permissions:

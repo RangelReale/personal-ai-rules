@@ -10,7 +10,9 @@ run-name: >-
 on:
   push:
     branches: [master]
+  # labeled/unlabeled: adding the no-changelog label re-runs the changelog check.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
 
 permissions:
@@ -22,26 +24,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # docs, version or code: docs-only and version-only changes skip the build.
+  # docs, version or code, and which parts changed: docs-only and version-only changes skip builds.
   changes:
     uses: RangelReale/personal-ai-rules/.github/workflows/changes.yml@__RULES_REF__
+    # with:
+      # Components (see ci-component-*.yml), one per line: <name>: <folder>
+      # components: |
+      #   android: apps/android
 
   build:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.main == 'true'
     uses: RangelReale/personal-ai-rules/.github/workflows/android-ci.yml@__RULES_REF__
 
-  # >>> changelog (feature: changelog)
+  # Fragments in changelog.d/; passes when the repository keeps none.
   changelog:
     needs: changes
     if: github.event_name == 'pull_request'
     uses: RangelReale/personal-ai-rules/.github/workflows/changelog-check.yml@__RULES_REF__
     with:
       kind: ${{ needs.changes.outputs.kind }}
-  # <<< changelog
 
-  # The only check branch protection requires. Skipped jobs pass, so the jobs above can change
-  # without touching the protection.
+  # The only check branch protection requires. Skipped jobs pass, so jobs can be added without
+  # touching the protection: list every other job in needs.
   ci-result:
     name: CI result
     needs: [changes, build, changelog]
