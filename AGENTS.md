@@ -11,7 +11,7 @@ The rules are plain Markdown; read them directly:
 - Language rules: `plugins/personal-rules/skills/{android,rust,go,cpp}/SKILL.md`.
 - What a repository should hold, and how to check and fix it:
   `plugins/personal-rules/reference/features.md`.
-- Commands (procedures): `plugins/personal-rules/skills/{new-project,check,establish,release,add-*}/SKILL.md`.
+- Commands (procedures): `plugins/personal-rules/skills/{new-project,check,establish,mmp,release,add-*}/SKILL.md`.
   `${CLAUDE_PLUGIN_ROOT}` in them means `plugins/personal-rules/` of this repository.
 
 ## Working on this repository

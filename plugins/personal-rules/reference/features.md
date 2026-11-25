@@ -66,6 +66,7 @@ updates over installed apps).
 | `readme` | `README.md` exists and says what the project is | write a short one: name, one paragraph, how to install or build, license |
 | `local-refs` | no tracked file names a local path, LAN address or personal detail (`git grep -nIE '[A-Za-z]:\\\\(Users\|prog)\|/Users/[a-z]\|/home/[a-z]\|192\\.168\\.'`) | report each hit; move the fact to `CLAUDE.local.md` or replace it with an invented sample |
 | `default-branch` | the default branch is `master` or `main` | report only |
+| `local-skills` | no `.claude/skills/<name>` duplicates a plugin command (`mmp`, `release`) | report it; the plugin's `/personal-rules:<name>` works by stage. Remove the local copy only on the user's yes, after carrying its repository-specific steps (extra checks, labels, required check names) into `CLAUDE.md` |
 
 ## Language items (the main language, and each component)
 
