@@ -3,8 +3,11 @@ name: changelog-check
 # On a pull request, checks the changelog fragments in changelog.d/:
 # - each fragment is named <name>.<type>.md with a Keep a Changelog type and is not empty;
 # - a change of kind "code" adds at least one fragment, unless the pull request has the label
-#   no-changelog (for changes people who use the project would not notice).
+#   no-changelog (for changes people who use the project would not notice) or comes from
+#   Dependabot;
 # CHANGELOG.md itself may change only together with removed fragments (a release).
+# Without a changelog.d/ folder there is nothing to check, so callers can always include this job.
+# Callers trigger on pull_request types labeled and unlabeled too, so adding the label re-runs it.
 on:
   workflow_call:
     inputs:
@@ -30,9 +33,13 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           KIND: ${{ inputs.kind }}
-          NO_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+          NO_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') || github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
           set -euo pipefail
+          if [ ! -d changelog.d ]; then
+            echo "No changelog.d/: this repository keeps no changelog fragments."
+            exit 0
+          fi
           status=0
           for f in changelog.d/*.md; do
             [ -e "$f" ] || continue

@@ -48,28 +48,44 @@ git init -q -b master
 git config user.email test@example.com
 git config user.name test
 git config core.autocrlf false
-printf '[workspace.package]\nversion = "1.0.0"\n' > Cargo.toml
-printf '[[package]]\nname = "a"\nversion = "1.0.0"\n' > Cargo.lock
-mkdir -p src changelog.d docs
+printf '[workspace.package]\nversion = "1.0.0"\nrust-version = "1.90"\n\n[workspace.dependencies]\nserde = { version = "1" }\n' > Cargo.toml
+printf '[[package]]\nname = "a"\nversion = "1.0.0"\n\n[[package]]\nname = "dep"\nversion = "0.4.1"\n' > Cargo.lock
+mkdir -p src changelog.d docs apps/android plugins/p
 echo code > src/main.rs
+echo app > apps/android/build.gradle.kts
+echo skill > plugins/p/SKILL.md
 echo "# Changelog" > CHANGELOG.md
 echo "- x" > changelog.d/x.added.md
 git add -A && git commit -qm base
 base=$(git rev-parse HEAD)
+# Prints "<kind> <main> <components>".
 classify() {
-  EVENT=pull_request PR_BASE=$base VERSION_FILES=$'Cargo.toml\n' GITHUB_OUTPUT=/dev/stdout \
-    bash "$tmp/classify.sh" | sed -n 's/^kind=//p'
+  EVENT=${EVENT:-pull_request} PR_BASE=$base BEFORE=${BEFORE:-} VERSION_FILES=$'Cargo.toml\n' \
+    COMPONENTS=$'android: apps/android\nios: ports/ios' CODE_PATHS=plugins/ GITHUB_OUTPUT=/dev/stdout \
+    bash "$tmp/classify.sh" | sed -n 's/^\(kind\|main\|components\)=//p' | tr '\n' ' ' | sed 's/ $//'
   git reset -q --hard "$base"
 }
 echo doc > docs/a.md && echo r > README.md && git add -A && git commit -qm d
-expect "docs only" "$(classify)" docs
-sed -i 's/1.0.0/1.1.0/' Cargo.toml Cargo.lock && git rm -q changelog.d/x.added.md
+expect "docs only" "$(classify)" 'docs false []'
+sed -i 's/"1.0.0"/"1.1.0"/' Cargo.toml Cargo.lock && git rm -q changelog.d/x.added.md
 echo "## [1.1.0]" >> CHANGELOG.md && git add -A && git commit -qm v
-expect "version only" "$(classify)" version
-sed -i 's/1.0.0/1.1.0/' Cargo.toml && echo 'edition = "2024"' >> Cargo.toml && git add -A && git commit -qm v2
-expect "manifest with another change" "$(classify)" code
+expect "version only" "$(classify)" 'version false []'
+sed -i 's/"1.0.0"/"1.1.0"/' Cargo.toml && echo 'edition = "2024"' >> Cargo.toml && git add -A && git commit -qm v2
+expect "manifest with another change" "$(classify)" 'code true []'
+sed -i 's/version = "1" }/version = "1.2" }/' Cargo.toml && git add -A && git commit -qm dep
+expect "dependency version is code" "$(classify)" 'code true []'
+sed -i 's/1.90/1.91/' Cargo.toml && git add -A && git commit -qm rv
+expect "rust-version is code" "$(classify)" 'code true []'
+sed -i 's/0.4.1/0.4.2/' Cargo.lock && git add -A && git commit -qm lock
+expect "lockfile update is code" "$(classify)" 'code true []'
 echo more >> src/main.rs && echo "- y" > changelog.d/y.fixed.md && git add -A && git commit -qm c
-expect "code" "$(classify)" code
+expect "main code" "$(classify)" 'code true []'
+echo more >> apps/android/build.gradle.kts && git add -A && git commit -qm a
+expect "component only" "$(classify)" 'code false ["android"]'
+echo more >> plugins/p/SKILL.md && git add -A && git commit -qm p
+expect "markdown in code-paths" "$(classify)" 'code true []'
+echo more >> src/main.rs && git add -A && git commit -qm first
+expect "first push builds all" "$(EVENT=push BEFORE=0000000000000000000000000000000000000000 classify)" 'code true ["android","ios"]'
 
 # --- changelog.sh and the notes release-publish.yml extracts
 mkdir -p "$tmp/l/changelog.d" && cd "$tmp/l" || exit 1

@@ -84,4 +84,4 @@ jobs:
         with:
           name: release-rust-${{ matrix.os }}
           path: dist/*
-          retention-days: 1
+          retention-days: 7

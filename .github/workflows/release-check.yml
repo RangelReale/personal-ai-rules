@@ -112,9 +112,9 @@ jobs:
               CMakeLists.txt)
                 expected=$CORE
                 found=$(tr '\n' ' ' < "$file" | grep -oiE 'project\([^)]*\)' | head -1 \
-                  | grep -oE 'VERSION[[:space:]]+[0-9]+(\.[0-9]+)*' | awk '{print $2}') ;;
+                  | grep -oE 'VERSION[[:space:]]+[0-9]+(\.[0-9]+)*' | awk '{print $2}' || true) ;;
               *.json)
-                found=$(jq -r '.version // empty' "$file") ;;
+                found=$(jq -r '.version // empty' "$file" 2>/dev/null || true) ;;
               *)
                 found=$(tr -d '[:space:]' < "$file") ;;
             esac

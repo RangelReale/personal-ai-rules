@@ -17,7 +17,9 @@ on:
         type: string
         default: ''
       matrix:
-        description: JSON list of {os, preset, setup}, as in cpp-ci.yml; the build config is Release
+        description: >-
+          JSON list of {os, preset, setup}, as in cpp-ci.yml. Each preset's binaryDir must be
+          build/<preset name>; the build config is Release.
         type: string
         default: >-
           [
@@ -87,7 +89,9 @@ jobs:
           VERSION: ${{ inputs.version }}
           VERSION_DEFINE: ${{ inputs.version-define }}
         run: |
-          args=(--preset "$PRESET")
+          # CMAKE_BUILD_TYPE covers single-config generators; --config Release below covers
+          # multi-config ones.
+          args=(--preset "$PRESET" -DCMAKE_BUILD_TYPE=Release)
           if [ -n "$VERSION_DEFINE" ]; then args+=("-D${VERSION_DEFINE}=${VERSION%%-*}"); fi
           cmake "${args[@]}"
 
@@ -115,5 +119,5 @@ jobs:
         with:
           name: release-cpp-${{ matrix.preset }}
           path: dist/*
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: error
