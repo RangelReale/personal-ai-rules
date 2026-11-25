@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-25
+
+### Fixed
+
+- `/personal-rules:mmp` ignores the failed CI result a cancelled run leaves behind and waits for
+  the newer run, instead of stopping as if a required check had failed.
+- The changelog check allows adding CHANGELOG.md, so a repository can set up its changelog in a
+  pull request.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added
