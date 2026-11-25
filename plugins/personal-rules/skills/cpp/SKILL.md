@@ -56,5 +56,6 @@ cmake --preset <preset> && cmake --build --preset <preset> && ctest --preset <pr
   unsigned code); a Developer ID identity adds the hardened runtime and notarisation.
 - The version is `project(VERSION)` in `CMakeLists.txt`, checked against the tag, or a cache
   variable the release sets from the tag (`version-define` in `cpp-release.yml`).
-- Jobs holding signing secrets run in the protected `release` environment, with their actions
-  pinned to commits.
+- Jobs holding signing secrets run in the environment named by `release-environment` in
+  `.github/personal-rules.yml` (`release`, limited to `v*` tags), with their actions pinned to
+  commits.

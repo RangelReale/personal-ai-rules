@@ -18,6 +18,7 @@ version: 0.1.0        # personal-rules version last applied
 stage: early          # early | established
 language: rust        # the main language: android | rust | go | cpp | none
 features: [release, changelog]   # any of: ci, release, changelog, dependabot, license
+release-environment: release     # environment with the signing secrets; '' = repository secrets
 components:           # other parts, each in its own folder, built on the main code
   - name: android
     language: android # android | ios
@@ -41,6 +42,17 @@ confirms.
   `apps/<name>-android`, `ports/android`, `ports/ios`.
 - Features: from the files below. Stage: `established` if `master` has a ruleset or branch
   protection, else `early`.
+- `release-environment`: `release` if the repository has that environment
+  (`gh api repos/{owner}/{repo}/environments`), else `''`. An existing repository keeps its
+  repository secrets unless the user chooses to move them (see "Release environment").
+
+**Release environment.** New repositories keep their signing secrets in the GitHub environment
+`release` (the record's default): only jobs that declare it can read them, and it admits only
+release tags. Existing repositories may keep repository secrets (`release-environment: ''`).
+Secret values cannot be read back or copied, so moving them means entering each value again
+(`gh secret set <NAME> --env release`) and then deleting the repository secret; only the user can
+do that. A lost value cannot be moved: it must be rotated (for Android, a new signing key breaks
+updates over installed apps).
 
 ## Base items (every repository, every stage)
 
@@ -94,13 +106,22 @@ code. For a component, check inside its `path`.
 
 ### `release`
 
-- `.github/workflows/release.yml` equals `templates/workflows/release-<language>.yml`, ref filled.
+- `.github/workflows/release.yml` equals `templates/workflows/release-<language>.yml`, ref filled
+  and `__RELEASE_ENVIRONMENT__` set to the record's `release-environment`.
 - Version files: `rust` → `Cargo.toml`; `cpp` → `CMakeLists.txt` (or a `version-define`); `go` and
   `android` → none (the tag is the version). Components never hold a version of their own.
 - Components: each has the job of `templates/workflows/release-component-<language>.yml`, listed
   in `publish`'s `needs`.
-- Android (main or component): the four `ANDROID_*` secrets exist (`gh secret list`); report
-  missing ones, never set them yourself.
+- Release environment (when `release-environment` is not empty and a release job signs): the
+  environment exists; create it, after asking, with
+  `gh api -X PUT repos/{owner}/{repo}/environments/release`, then limit it to release tags:
+  `gh api -X PUT repos/{owner}/{repo}/environments/release -F "deployment_branch_policy[protected_branches]=false" -F "deployment_branch_policy[custom_branch_policies]=true"`
+  and `gh api -X POST repos/{owner}/{repo}/environments/release/deployment-branch-policies -f name='v*' -f type=tag`.
+- Android (main or component): the four `ANDROID_*` secrets exist where the record says
+  (`gh secret list --env release`, or `gh secret list` for repository secrets). Report missing
+  ones with the command to set them; never set or move secrets yourself. Secrets at the repository
+  level while the record names an environment (or the reverse) are `differs`: explain the move in
+  "Release environment" and let the user choose to move them or change the record.
 
 ### `changelog`
 
