@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-25
+
+### Added
+
+- `release-only: true` on a component in `.github/personal-rules.yml` says only the release builds
+  it: `check` reports it as a note instead of asking for a CI job, while still expecting its paths
+  to skip the main build and the release to build it.
+
 ## [0.4.0] - 2026-11-25
 
 ### Added
