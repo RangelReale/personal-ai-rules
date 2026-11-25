@@ -56,6 +56,23 @@ machine-specific notes there.
 and an `@import` from `~/.claude/CLAUDE.md` would point into the plugin cache, whose path changes
 with every version. The hook needs no per-machine or per-project step and updates with the plugin.
 
+### Main language and components
+
+A repository has one **main language** (Android, Rust, Go, C++, or none) that holds the version and
+gets the main CI and release jobs. Apps for other platforms in sub-folders are **components**: an
+Android app (`apps/<name>-android`, `ports/android`) bundling a Rust or Go native library, or an iOS
+port (`ports/ios`). Each component gets its own CI and release job, which runs when its folder or the
+main code changed, and takes its version from the tag. iOS exists only as a component: it has no
+skill of its own, and its build is the component's own script.
+
+```yaml
+# .github/personal-rules.yml
+language: rust
+components:
+  - { name: android, language: android, path: apps/android, native: rust }
+  - { name: ios, language: ios, path: ports/ios }
+```
+
 ### Stages
 
 Each repository is in one of two stages, recorded in `.github/personal-rules.yml`:
@@ -71,8 +88,8 @@ Each repository is in one of two stages, recorded in `.github/personal-rules.yml
 
 | Command | What it does |
 |---|---|
-| `/personal-rules:new-project [name]` | Asks the language (android, rust, go, cpp, none) and the features (release and changelog preselected), writes the base files and the record, stage `early` |
-| `/personal-rules:check` | Audits the repository (base files, language basics, opted-in features, stage) and lists each item as ok, differs or missing; fixes only what you pick. Also upgrades pinned workflow refs |
+| `/personal-rules:new-project [name]` | Asks the main language (android, rust, go, cpp, none), the components (Android, iOS) and the features (release and changelog preselected), writes the base files and the record, stage `early` |
+| `/personal-rules:check` | Audits the repository (base files, main language and components, opted-in features, stage) and lists each item as ok, differs or missing; fixes only what you pick. Also finds unlisted components and upgrades pinned workflow refs |
 | `/personal-rules:establish` | Adds CI, then (after you confirm the JSON) creates the `master` ruleset: pull requests only, `CI result` required |
 | `/personal-rules:release [patch\|minor\|major\|X.Y.Z]` | Raises the version, merges `changelog.d/`, lands the version change, pushes the `vX.Y.Z` tag, watches the release |
 | `/personal-rules:add-ci` | The language's CI caller: `PR #<n>: <title>` run names, docs-only and version-only changes skip the build, one `CI result` check |
@@ -87,12 +104,13 @@ project's own changes.
 ## Reusable workflows
 
 Project callers live in [`templates/workflows`](plugins/personal-rules/templates/workflows)
-(`ci-<language>.yml`, `release-<language>.yml`, plus `-generic` for other languages). They call:
+(`ci-<language>.yml`, `release-<language>.yml`, plus `-generic` for other languages, and
+`ci-component-*.yml`/`release-component-*.yml`, the jobs a component adds). They call:
 
 | Workflow | Purpose |
 |---|---|
-| `changes.yml` | Classifies a change as `docs`, `version` or `code`; builds run only for `code` |
-| `go-ci.yml`, `rust-ci.yml`, `android-ci.yml`, `cpp-ci.yml` | Language checks |
+| `changes.yml` | Classifies a change as `docs`, `version` or `code`, and says whether the main code and which components changed; builds run only for what changed |
+| `go-ci.yml`, `rust-ci.yml`, `android-ci.yml`, `cpp-ci.yml` | Language checks; `android-ci` also builds an Android component with its Rust or Go native library |
 | `changelog-check.yml` | Fragment names, and a fragment for every code change |
 | `release-check.yml` | Tag format, manifest version equals the tag, tag on the default branch |
 | `go-release.yml`, `rust-release.yml`, `android-release.yml`, `cpp-release.yml` | Release files, uploaded as `release-*` artifacts |
@@ -117,8 +135,8 @@ repository must stay public for repositories of other owners to call them.
 
 ```sh
 bash tests/run.sh                 # workflow shell logic and the changelog tool
-actionlint                        # workflows
-bash scripts/lint-templates.sh    # caller templates
+actionlint                        # workflows (on Windows: bash scripts/lint-workflows.sh)
+bash scripts/lint-templates.sh    # caller templates, including component jobs
 claude plugin validate .          # marketplace and plugin
 ```
 

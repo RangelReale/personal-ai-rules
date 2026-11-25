@@ -19,8 +19,11 @@ disable-model-invocation: true
      unless the release uses a `version-define`;
    - other manifests the release checks (`version-files` in `.github/workflows/release.yml`);
    - `go`, `android`: nothing, the tag is the version;
-   - `changelog`: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/changelog.sh" release <version>` merges
-     the fragments into `CHANGELOG.md` and deletes them.
+   - components: nothing, they take the tag's version;
+   - `changelog`, final versions only: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/changelog.sh" release
+     <version>` merges the fragments into `CHANGELOG.md` and deletes them. A prerelease
+     (`X.Y.Z-rc.N`) leaves the fragments for the final version; its notes are generated.
+   If nothing changed (a prerelease of Go or Android), skip to step 6 and tag `master`.
 4. Commit: `chore(release): v<version>`.
 5. Get it onto `master` by stage: `early` → local `--no-ff` merge and push; `established` → push,
    `gh pr create --title "chore(release): v<version>"`, wait for `CI result` (version-only, so it

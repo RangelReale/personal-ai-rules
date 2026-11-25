@@ -2,5 +2,12 @@
 # the always-on rules read `stage` to decide how work reaches master.
 version: __RULES_VERSION__  # personal-rules version last applied
 stage: early                # early: merge locally, no CI | established: PR-only master, CI result required
-language: __LANGUAGE__      # android | rust | go | cpp | none
+language: __LANGUAGE__      # the main language, which holds the version: android | rust | go | cpp | none
 features: []                # any of: ci, release, changelog, dependabot, license
+# Other parts of the repository, each in its own folder, built on the main code:
+# components:
+#   - name: android         # job and artifact name
+#     language: android     # android | ios
+#     path: apps/android    # the folder holding gradlew (android) or build.sh (ios)
+#     native: rust          # android only: the native library it bundles: rust | go | none
+components: []

@@ -32,6 +32,19 @@ No extra linters: gofmt and vet are the standard.
 - Wrap errors with context: `fmt.Errorf("open %s: %w", path, err)`.
 - Bind local servers to `127.0.0.1`, not all interfaces, unless they must be reachable.
 
+## Android and iOS apps around the Go code
+
+Go is the main language; the apps are components in their own folders (`ports/android`,
+`ports/ios`), listed under `components:` in `.github/personal-rules.yml`.
+
+- Android runs the Go program as a native library: `GOOS=android GOARCH=arm64 CGO_ENABLED=0` into
+  the app's `jniLibs/arm64-v8a/lib<name>.so` (see the `android` skill). iOS forbids running a
+  separate program, so it links Go as a `c-archive` instead.
+- Keep platform code out of the library: desktop or mobile wrappers live in their own folders or
+  modules, and every port goes through one entry point so `main` packages stay thin.
+- Cross-compile the phone builds to catch desktop-only assumptions:
+  `GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/<server>`.
+
 ## Releases
 
 - The tag is the version; nothing in the tree is bumped. Libraries publish only the tag and the

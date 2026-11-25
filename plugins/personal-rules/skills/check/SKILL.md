@@ -10,7 +10,9 @@ disable-model-invocation: true
 1. Read `${CLAUDE_PLUGIN_ROOT}/reference/features.md`: it defines every item, its check and its fix.
 2. Read `.github/personal-rules.yml`. If it is missing, survey the repository as that file says,
    show the guessed record, and continue only after the user confirms or corrects it.
-3. Audit every item that applies (base, language, each feature in `features`, the stage). Items
+3. Audit every item that applies (base, the main language, each component, each feature in
+   `features`, the stage). Look for components the record does not list (folders with `gradlew`
+   or an iOS project) and report them as `differs`. Items
    for features the repository did not opt into are `➖`, not missing. Only read in this step:
    change nothing.
 4. Print the report in the format the reference gives. Say what you could not check (for example

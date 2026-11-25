@@ -77,5 +77,8 @@ private details (code, docs, comments, test data, images). Put such facts in `CL
 
 ## Language skills
 
-For Android (Kotlin), Rust, Go and C++ (Qt/CMake) projects, the `personal-rules` skill for that
-language holds the build and code rules; load it before changing code there.
+For Android (Kotlin), Rust, Go and C++ (Qt/CMake) code, the `personal-rules` skill for that
+language holds the build and code rules; load it before changing code there. A repository has one
+main language (it holds the version) and may have components in sub-folders, such as an Android or
+iOS app on a Rust or Go core (`components:` in `.github/personal-rules.yml`); load the skill of
+each part you change.

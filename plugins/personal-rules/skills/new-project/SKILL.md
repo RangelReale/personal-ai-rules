@@ -10,7 +10,11 @@ disable-model-invocation: true
 The reference for every file is `${CLAUDE_PLUGIN_ROOT}/reference/features.md`.
 
 1. Ask, in one `AskUserQuestion` call:
-   - the language: `android`, `rust`, `go`, `cpp` or `none`;
+   - the main language: `android`, `rust`, `go`, `cpp` or `none` (it holds the version);
+   - the components (multi-select, none by default): an Android app and/or an iOS app in their own
+     folders, built on the main code. Then propose their folders (`apps/<name>-android` or
+     `ports/android`, `ports/ios`) and, for Android, the native library (`rust`/`go` from the main
+     language);
    - the features (multi-select), with **release** and **changelog** preselected (listed first and
      marked recommended); `license` (MIT), `dependabot` and `ci` unselected. Say that `ci` normally
      waits until `/personal-rules:establish`;
@@ -20,7 +24,9 @@ The reference for every file is `${CLAUDE_PLUGIN_ROOT}/reference/features.md`.
 3. Write, in this order (work directly on `master` only for the very first commit of an empty
    repository; after that, use a worktree):
    - `.github/personal-rules.yml` from the template: `stage: early`, the language, the features,
-     `version` = the plugin's version;
+     the components, `version` = the plugin's version;
+   - for each component, its folder and the gitignore lines for generated files (Android:
+     `<path>/app/src/main/jniLibs/`);
    - the base items: `.gitignore`, `.gitattributes`, `.editorconfig`, `CLAUDE.md`, `README.md`;
    - each chosen feature, as the reference describes it.
 4. Do not scaffold application code unless the user asks; when they do, follow the language skill.

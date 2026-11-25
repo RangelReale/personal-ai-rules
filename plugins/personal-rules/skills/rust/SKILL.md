@@ -37,6 +37,18 @@ Fix clippy warnings; do not `#[allow]` them without a comment saying why.
 - Errors: `thiserror` in libraries, `anyhow` (with context) in binaries.
 - Keep platform code behind `#[cfg(...)]` modules, so the rest builds everywhere.
 
+## Android and iOS apps on the workspace
+
+Rust is the main language; the apps are components in their own folders (`apps/<name>-android`,
+`ports/android`, `ports/ios`), listed under `components:` in `.github/personal-rules.yml`.
+
+- Expose the library to the apps through thin FFI crates: a `cdylib` for Android and a
+  `staticlib` for iOS, either one shim crate per platform (`<name>-android`, `<name>-ios`) or one
+  `<name>-ffi` crate with both types. Keep platform glue out of the core crates.
+- The apps follow the workspace version; they hold none of their own.
+- Changing the FFI surface means building the apps too (load the `android` skill for the Android
+  app; the iOS specifics are in the repository's `CLAUDE.md`).
+
 ## Releases
 
 - A release changes only `[workspace.package] version`, the workspace crates' entries in
