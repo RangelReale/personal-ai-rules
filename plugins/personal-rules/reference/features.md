@@ -88,6 +88,12 @@ code. For a component, check inside its `path`.
 
 ## Features
 
+**Standard features: `release` and `changelog`.** Every repository should have them;
+`/personal-rules:check standard` adds the ones a repository lacks, and `new-project` preselects
+them. `ci` is not standard in stage `early` (it comes with `/personal-rules:establish`, or whenever
+the user asks for `/personal-rules:add-ci`); it is required in stage `established`. `license` and
+`dependabot` are added only on request.
+
 ### `ci`
 
 - `.github/workflows/ci.yml` equals `templates/workflows/ci-<language>.yml` (`ci-generic.yml` for
@@ -187,6 +193,12 @@ One line per item, grouped (Base, Language and components, Features, Stage):
 ❌ changelog            missing: changelog.d/README.md
 ➖ dependabot           not a feature of this repository
 ```
+
+End the report with the features the repository has not opted into, standard ones first:
+`Not opted in: changelog (standard), dependabot, license. Add with /personal-rules:check standard
+or /personal-rules:add-<feature>.` With the argument `standard`, each missing standard feature is a
+`❌ <feature>  missing (standard)` item instead, fixed by its `add-*` procedure, which also adds it
+to the record's `features`.
 
 Then ask which of the `⚠️`/`❌` items to fix (all, a list, or none). Fix, update `version` in the
 record, and commit the fixes as `chore: apply personal-rules <version>` (or one commit per
