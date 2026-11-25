@@ -1,0 +1,128 @@
+name: release-check
+
+# Checks a release tag before anything is built:
+# - the tag is vX.Y.Z or vX.Y.Z-<prerelease> (a prerelease is published as one);
+# - every manifest listed in version-files holds the same version;
+# - the tagged commit is on the default branch.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag to release; defaults to the pushed tag
+        type: string
+        default: ''
+      version-files:
+        description: >-
+          Manifests, one per line, that must hold the tag's version: Cargo.toml (workspace.package
+          or package version), CMakeLists.txt (project VERSION, compared without the prerelease
+          part), *.json (.version), or any other file holding just the version (VERSION).
+        type: string
+        default: ''
+      require-default-branch:
+        description: Fail when the tagged commit is not on the default branch
+        type: boolean
+        default: true
+    outputs:
+      tag:
+        value: ${{ jobs.check.outputs.tag }}
+      version:
+        description: The version without the leading v, for example 1.2.0 or 1.2.0-rc.1
+        value: ${{ jobs.check.outputs.version }}
+      prerelease:
+        description: "'true' when the version has a prerelease part"
+        value: ${{ jobs.check.outputs.prerelease }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Version from tag
+        id: version
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag '$TAG' is not vX.Y.Z or vX.Y.Z-<prerelease>"
+            exit 1
+          fi
+          version="${TAG#v}"
+          prerelease=false
+          [ -n "${BASH_REMATCH[2]}" ] && prerelease=true
+          {
+            echo "tag=$TAG"
+            echo "version=$version"
+            echo "core=${BASH_REMATCH[1]}"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $TAG: version $version, prerelease $prerelease"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Tag is on the default branch
+        if: inputs.require-default-branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if ! git merge-base --is-ancestor HEAD "origin/$DEFAULT_BRANCH"; then
+            echo "::error::The tagged commit is not on $DEFAULT_BRANCH. Tag only merged commits."
+            exit 1
+          fi
+
+      - name: Manifests hold the tag's version
+        if: inputs.version-files != ''
+        shell: bash
+        env:
+          VERSION_FILES: ${{ inputs.version-files }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CORE: ${{ steps.version.outputs.core }}
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r file; do
+            file=$(echo "$file" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [ -z "$file" ] && continue
+            if [ ! -f "$file" ]; then
+              echo "::error file=$file::$file does not exist"; status=1; continue
+            fi
+            expected=$VERSION
+            case "${file##*/}" in
+              Cargo.toml)
+                # The version of [workspace.package], else of [package].
+                found=$(awk '
+                  /^\[/ { section = $0 }
+                  /^version[[:space:]]*=/ && (section == "[workspace.package]" || section == "[package]") {
+                    gsub(/^version[[:space:]]*=[[:space:]]*"|".*$/, ""); v[section] = $0
+                  }
+                  END { print (v["[workspace.package]"] != "" ? v["[workspace.package]"] : v["[package]"]) }
+                ' "$file") ;;
+              CMakeLists.txt)
+                expected=$CORE
+                found=$(tr '\n' ' ' < "$file" | grep -oiE 'project\([^)]*\)' | head -1 \
+                  | grep -oE 'VERSION[[:space:]]+[0-9]+(\.[0-9]+)*' | awk '{print $2}' || true) ;;
+              *.json)
+                found=$(jq -r '.version // empty' "$file" 2>/dev/null || true) ;;
+              *)
+                found=$(tr -d '[:space:]' < "$file") ;;
+            esac
+            if [ "$found" = "$expected" ]; then
+              echo "$file: $found"
+            else
+              echo "::error file=$file::$file holds version '$found', the tag needs '$expected'"
+              status=1
+            fi
+          done <<< "$VERSION_FILES"
+          exit $status

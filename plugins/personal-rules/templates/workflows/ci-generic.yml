@@ -1,0 +1,67 @@
+# Managed by personal-rules (__RULES_REF__); /personal-rules:check compares it with the template.
+name: CI
+
+# Pull request runs are titled "PR #<number>: <title>"; an empty run-name keeps GitHub's default.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+  && format('PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title)
+  || '' }}
+
+on:
+  push:
+    branches: [master]
+  # labeled/unlabeled: adding the no-changelog label re-runs the changelog check.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run; runs on master all finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # docs, version or code, and which parts changed: docs-only and version-only changes skip builds.
+  changes:
+    uses: RangelReale/personal-ai-rules/.github/workflows/changes.yml@__RULES_REF__
+    # with:
+      # Components (see ci-component-*.yml), one per line: <name>: <folder>
+      # components: |
+      #   android: apps/android
+
+  # The project's own checks; they run only when the main code changed.
+  build:
+    needs: changes
+    if: needs.changes.outputs.main == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: echo "Replace with the project's build and tests"
+
+  # Fragments in changelog.d/; passes when the repository keeps none.
+  changelog:
+    needs: changes
+    if: github.event_name == 'pull_request'
+    uses: RangelReale/personal-ai-rules/.github/workflows/changelog-check.yml@__RULES_REF__
+    with:
+      kind: ${{ needs.changes.outputs.kind }}
+
+  # The only check branch protection requires. Skipped jobs pass, so jobs can be added without
+  # touching the protection: list every other job in needs.
+  ci-result:
+    name: CI result
+    needs: [changes, build, changelog]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in success | skipped) ;; *) exit 1 ;; esac
+          done

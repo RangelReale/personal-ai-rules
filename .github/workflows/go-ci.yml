@@ -1,0 +1,65 @@
+name: go-ci
+
+# Go checks: gofmt (must print nothing), go vet, go test (-race on Linux).
+# The Go version comes from go.mod, so CI and local builds agree.
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: JSON list of runner images
+        type: string
+        default: '["ubuntu-26.04"]'
+      working-directory:
+        description: Directory holding go.mod
+        type: string
+        default: '.'
+      test-args:
+        description: Extra arguments for go test
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: ${{ inputs.working-directory }}/go.mod
+          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # The race detector needs cgo; Linux runners have it out of the box.
+      - name: go test
+        env:
+          TEST_ARGS: ${{ inputs.test-args }}
+        run: |
+          race=""
+          if [ "$RUNNER_OS" = Linux ]; then race=-race; fi
+          # shellcheck disable=SC2086
+          go test $race $TEST_ARGS ./...

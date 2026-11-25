@@ -1,0 +1,70 @@
+name: changelog-check
+
+# On a pull request, checks the changelog fragments in changelog.d/:
+# - each fragment is named <name>.<type>.md with a Keep a Changelog type and is not empty;
+# - a change of kind "code" adds at least one fragment, unless the pull request has the label
+#   no-changelog (for changes people who use the project would not notice) or comes from
+#   Dependabot;
+# CHANGELOG.md itself may change only together with removed fragments (a release).
+# Without a changelog.d/ folder there is nothing to check, so callers can always include this job.
+# Callers trigger on pull_request types labeled and unlabeled too, so adding the label re-runs it.
+on:
+  workflow_call:
+    inputs:
+      kind:
+        description: The change kind from changes.yml (docs, version or code)
+        type: string
+        default: code
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fragments
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          KIND: ${{ inputs.kind }}
+          NO_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') || github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: |
+          set -euo pipefail
+          if [ ! -d changelog.d ]; then
+            echo "No changelog.d/: this repository keeps no changelog fragments."
+            exit 0
+          fi
+          status=0
+          for f in changelog.d/*.md; do
+            [ -e "$f" ] || continue
+            name=${f##*/}
+            [ "$name" = README.md ] && continue
+            if [[ ! "$name" =~ ^[A-Za-z0-9._-]+\.(added|changed|deprecated|removed|fixed|security)\.md$ ]]; then
+              echo "::error file=$f::Name fragments <name>.<added|changed|deprecated|removed|fixed|security>.md"
+              status=1
+            elif [ -z "$(tr -d '[:space:]' < "$f")" ]; then
+              echo "::error file=$f::The fragment is empty"
+              status=1
+            fi
+          done
+          if [ -z "$BASE" ]; then
+            echo "Not a pull request: only fragment names were checked."
+            exit $status
+          fi
+          added=$(git diff --name-only --diff-filter=A "$BASE" HEAD -- changelog.d/ | grep -v '/README.md$' || true)
+          removed=$(git diff --name-only --diff-filter=D "$BASE" HEAD -- changelog.d/ || true)
+          if git diff --quiet "$BASE" HEAD -- CHANGELOG.md; then :; elif [ -z "$removed" ]; then
+            echo "::error file=CHANGELOG.md::Do not edit CHANGELOG.md; add a fragment in changelog.d/. Only a release merges them."
+            status=1
+          fi
+          if [ "$KIND" = code ] && [ -z "$added" ] && [ "$NO_CHANGELOG" != true ]; then
+            echo "::error::Add a fragment in changelog.d/ (see changelog.d/README.md), or label the pull request no-changelog."
+            status=1
+          fi
+          exit $status

@@ -1,0 +1,41 @@
+# Managed by personal-rules (__RULES_REF__); /personal-rules:check compares it with the template.
+name: Release
+
+# Pushing a tag vX.Y.Z (or vX.Y.Z-rc.N, a prerelease) checks it, builds the release files and
+# publishes the GitHub release. To redo a failed run, re-run its failed jobs.
+run-name: Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: RangelReale/personal-ai-rules/.github/workflows/release-check.yml@__RULES_REF__
+
+  build:
+    needs: check
+    uses: RangelReale/personal-ai-rules/.github/workflows/go-release.yml@__RULES_REF__
+    with:
+      version: ${{ needs.check.outputs.version }}
+      # package: ./cmd/<name>      # the main package, if not the repository root
+      # A library has no binaries: delete this job and `build` from publish's needs.
+
+  # Component release jobs (see release-component-*.yml) go here; add each to publish's needs.
+
+  publish:
+    needs: [check, build]
+    permissions:
+      contents: write
+    uses: RangelReale/personal-ai-rules/.github/workflows/release-publish.yml@__RULES_REF__
+    with:
+      tag: ${{ needs.check.outputs.tag }}
+      version: ${{ needs.check.outputs.version }}
+      prerelease: ${{ needs.check.outputs.prerelease }}

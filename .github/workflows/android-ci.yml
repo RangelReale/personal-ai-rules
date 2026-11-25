@@ -1,0 +1,104 @@
+name: android-ci
+
+# Android checks: unit tests, lint and a debug build, the same command as local work.
+# Works for a standalone app (gradlew at the root) and for an Android component of a repository
+# whose main language is Rust or Go (gradlew in a folder such as apps/android, with a native library
+# built first by `pre-build`).
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Folder holding gradlew
+        type: string
+        default: '.'
+      java-version:
+        type: string
+        default: '21'
+      gradle-tasks:
+        type: string
+        default: testDebugUnitTest lintDebug assembleDebug
+      native:
+        description: >-
+          The native code the app bundles: none, rust (installs the toolchain from
+          rust-toolchain.toml, the Android targets, cargo-ndk and the NDK) or go (setup-go from go.mod)
+        type: string
+        default: none
+      rust-targets:
+        description: Rust Android targets, space separated (native rust)
+        type: string
+        default: aarch64-linux-android x86_64-linux-android
+      ndk-version:
+        description: The Android NDK to install (native rust); keep it equal to the local builds'
+        type: string
+        default: 28.2.13676358
+      pre-build:
+        description: >-
+          Bash run from the repository root before Gradle, for example the native library build:
+          cargo ndk -t arm64-v8a -t x86_64 -P 26 -o apps/android/app/src/main/jniLibs build -p ffi --release
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Rust for Android
+        if: inputs.native == 'rust'
+        env:
+          TARGETS: ${{ inputs.rust-targets }}
+          NDK_VERSION: ${{ inputs.ndk-version }}
+        run: |
+          rustup toolchain install --no-self-update
+          # shellcheck disable=SC2086
+          rustup target add $TARGETS
+          cargo install --locked cargo-ndk
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@v2
+        if: inputs.native == 'rust'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' }}
+
+      - uses: actions/setup-go@v7
+        if: inputs.native == 'go'
+        with:
+          go-version-file: go.mod
+
+      - name: Before Gradle
+        if: inputs.pre-build != ''
+        env:
+          PRE_BUILD: ${{ inputs.pre-build }}
+        run: bash -euo pipefail -c "$PRE_BUILD"
+
+      - name: Gradle
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          TASKS: ${{ inputs.gradle-tasks }}
+        run: |
+          chmod +x gradlew
+          # shellcheck disable=SC2086
+          ./gradlew $TASKS
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: android-reports
+          path: ${{ inputs.working-directory }}/**/build/reports/
+          retention-days: 7

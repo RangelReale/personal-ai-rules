@@ -1,0 +1,79 @@
+name: cpp-ci
+
+# C++/Qt/CMake checks: download Qt with the project's setup script, then configure, build and test
+# with CMake presets. Tests run through ctest, which sets the offscreen Qt platform.
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: >-
+          JSON list of {os, preset, setup}: the runner, the CMake configure/build/test preset, and
+          the command that downloads Qt into .qt/ (or $QT_ROOT).
+        type: string
+        default: >-
+          [
+            {"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"},
+            {"os": "macos-26", "preset": "macos", "setup": "sh scripts/setup.sh"}
+          ]
+      linux-packages:
+        description: apt packages to install on Linux runners (space separated)
+        type: string
+        default: libgl1-mesa-dev libxkbcommon-dev libxcb-cursor0 ninja-build
+      qt-cache-key:
+        description: Files whose hash keys the Qt cache (the scripts that pin the Qt version)
+        type: string
+        default: scripts/setup.*
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CTEST_PARALLEL_LEVEL: 4
+    steps:
+      - uses: actions/checkout@v7
+
+      # aqtinstall runs through uvx.
+      - uses: astral-sh/setup-uv@v10.3.3
+
+      - name: Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Packages (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PACKAGES: ${{ inputs.linux-packages }}
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086
+          sudo apt-get install -y --no-install-recommends $PACKAGES
+
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache Qt
+        uses: actions/cache@v6
+        with:
+          path: .qt
+          key: qt-${{ runner.os }}-${{ hashFiles(inputs.qt-cache-key) }}
+
+      - name: Download Qt
+        run: ${{ matrix.setup }}
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}

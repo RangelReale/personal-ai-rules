@@ -1,0 +1,14 @@
+# personal-rules: keep GitHub Actions current, in one monthly pull request.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+    # No changelog fragment for action updates.
+    labels: [no-changelog]
