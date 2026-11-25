@@ -40,6 +40,9 @@ Read `.github/personal-rules.yml`. Its `stage` decides how work reaches `master`
 - No file: follow the repository's `CLAUDE.md`; if it says nothing, ask before merging, and suggest
   `/personal-rules:check`.
 
+When the user asks to "mmp" (merge and push), load the `personal-rules:mmp` skill: it does the
+whole run for either stage, from commit to cleanup.
+
 You may push work branches, open pull requests, merge them as above, and push release tags without
 asking. Never force-push, never push to a protected `master`, never rewrite pushed history.
 

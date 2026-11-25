@@ -101,6 +101,7 @@ Each repository is in one of two stages, recorded in `.github/personal-rules.yml
 | `/personal-rules:new-project [name]` | Asks the main language (android, rust, go, cpp, none), the components (Android, iOS) and the features (release and changelog preselected), writes the base files and the record, stage `early` |
 | `/personal-rules:check` | Audits the repository (base files, main language and components, opted-in features, stage) and lists each item as ok, differs or missing; fixes only what you pick. Also finds unlisted components and upgrades pinned workflow refs |
 | `/personal-rules:establish` | Adds CI, then (after you confirm the JSON) creates the `master` ruleset: pull requests only, `CI result` required |
+| `/personal-rules:mmp` | Merges the current worktree's work into master and pushes, by the repository's stage: a local `--no-ff` merge for `early`, a pull request merged on a green `CI result` for `established`. Commits, adds a missing changelog fragment, runs the checks, then removes the worktree and branch. Also runs when you say "mmp" |
 | `/personal-rules:release [patch\|minor\|major\|X.Y.Z]` | Raises the version, merges `changelog.d/`, lands the version change, pushes the `vX.Y.Z` tag, watches the release |
 | `/personal-rules:add-ci` | The language's CI caller: `PR #<n>: <title>` run names, docs-only and version-only changes skip the build, one `CI result` check |
 | `/personal-rules:add-release` | The release caller: a `vX.Y.Z` tag (or `vX.Y.Z-rc.N`, a prerelease) is checked against the manifest, built and published |
