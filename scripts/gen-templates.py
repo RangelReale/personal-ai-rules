@@ -6,10 +6,12 @@ Edit this script, not the generated files; CI fails when they differ.
 Outputs:
   ci-<language>.yml, release-<language>.yml    whole workflows for the main language
   ci-component-<kind>.yml, release-component-<kind>.yml
-                                               jobs to add for a component (an Android app or an
-                                               iOS port inside a Rust or Go repository)
+                                               jobs to add for a component (an Android app, an
+                                               iOS port or another platform's port inside a Rust
+                                               or Go repository)
 Placeholders: __RULES_REF__ (v<plugin version>), __RELEASE_ENVIRONMENT__ (release-environment of
-the record, possibly empty); in component jobs __NAME__, __PATH__, __NATIVE__.
+the record, possibly empty); in component jobs __NAME__, __PATH__ (its first path), __NATIVE__,
+__BUILD__ (the `build` command of an `other` component).
 """
 import os
 import sys
@@ -117,6 +119,18 @@ CI_COMPONENTS = {
       - name: Build
         run: ./__PATH__/build.sh
 """,
+    "other": f"""  # Component __NAME__ (another platform) in __PATH__: its own build command, without signing.
+  # Ubuntu runners have Docker, for a build that runs in a container.
+  __NAME__:
+    needs: changes
+    if: {COMPONENT_IF}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: __BUILD__
+""",
 }
 
 # Jobs added to release.yml for a component; add the job name to publish's needs.
@@ -145,6 +159,23 @@ RELEASE_COMPONENTS = {
         env:
           VERSION: ${{ needs.check.outputs.version }}
         run: ./__PATH__/build.sh
+""",
+    "other": """  # Component __NAME__ (another platform): its build command with the tag's version in VERSION.
+  # Upload the package as release-__NAME__ to attach it to the release.
+  __NAME__:
+    needs: check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: __BUILD__
+      # - uses: actions/upload-artifact@v7
+      #   with:
+      #     name: release-__NAME__
+      #     path: <the package, for example dist/*.ipk>
 """,
 }
 

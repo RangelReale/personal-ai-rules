@@ -26,8 +26,8 @@ disable-model-invocation: true
    If nothing changed (a prerelease of Go or Android), skip to step 6 and tag `master`.
 4. Commit: `chore(release): v<version>`.
 5. Get it onto `master` by stage: `early` → local `--no-ff` merge and push; `established` → push,
-   `gh pr create --title "chore(release): v<version>"`, wait for `CI result` (version-only, so it
-   is quick), `gh pr merge --merge`.
+   `gh pr create --title "chore(release): v<version>"`, wait for the required check (`ci-check`,
+   default `CI result`; version-only, so it is quick), `gh pr merge --merge`.
 6. Update the main checkout (`git pull --ff-only`), then tag the merge commit on `master` and push
    only the tag:
    `git tag -a v<version> -m "v<version>" && git push origin v<version>`.

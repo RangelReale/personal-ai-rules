@@ -17,13 +17,14 @@ The reference is `${CLAUDE_PLUGIN_ROOT}/reference/features.md` (feature `ci`, se
    feature), set `stage: established`, commit (`ci: establish the repository`). Merge it the early
    way (local `--no-ff` merge, push), since the protection does not exist yet.
 4. Wait for the first `CI` run on `master` to pass (`gh run watch`); the ruleset requires the
-   `CI result` check, so it must exist and be green first. On a failure, stop and report it.
+   required check (`ci-check` in the record, default `CI result`), so it must exist and be green
+   first. On a failure, stop and report it.
 5. Show the user the ruleset from `${CLAUDE_PLUGIN_ROOT}/templates/github/ruleset-master.json`
-   (pull requests only, `CI result` required and up to date, no force pushes or deletion, admins
-   included, merge commits only) and ask for a yes. Only then:
+   with `ci-check` filled in (pull requests only, that check required and up to date, no force
+   pushes or deletion, admins included, merge commits only) and ask for a yes. Only then:
    `gh api -X POST repos/{owner}/{repo}/rulesets --input <file>`
    (or `-X PUT .../rulesets/<id>` when a ruleset named `master` exists).
 6. Make sure merge commits are allowed:
    `gh api -X PATCH repos/{owner}/{repo} -F allow_merge_commit=true`.
 7. Report: from now on work reaches `master` only through pull requests merged with
-   `gh pr merge --merge` after `CI result` passes.
+   `gh pr merge --merge` after the required check passes.

@@ -11,8 +11,12 @@ disable-model-invocation: true
 2. Read `.github/personal-rules.yml`. If it is missing, survey the repository as that file says,
    show the guessed record, and continue only after the user confirms or corrects it.
 3. Audit every item that applies (base, the main language, each component, each feature in
-   `features`, the stage). Look for components the record does not list (folders with `gradlew`
-   or an iOS project) and report them as `differs`. With `ci`, audit the path rules too (reference,
+   `features`, the stage). Look for components the record does not list (folders with `gradlew`,
+   an iOS project, another platform's project or build script, a platform the release builds) and
+   report them as `differs`. A feature in `custom` is audited by its contract (reference, "Custom
+   workflows"), never against the template; a workflow without the personal-rules header that the
+   record does not mark `custom` is `differs: not managed`, fixed by adding it to `custom`, not by
+   replacing it. With `ci`, audit the path rules too (reference,
    "Path rules"): list each top-level folder and whether a rule covers it, and propose `ignore`,
    `components` and `groups` entries that would spare builds. Items
    for features the repository did not opt into are `➖`, not missing, unless the argument

@@ -1,0 +1,12 @@
+# Jobs to add to ci.yml for a component; see the header of ci-<language>.yml.
+  # Component __NAME__ (another platform) in __PATH__: its own build command, without signing.
+  # Ubuntu runners have Docker, for a build that runs in a container.
+  __NAME__:
+    needs: changes
+    if: needs.changes.outputs.main == 'true' || contains(fromJSON(needs.changes.outputs.components), '__NAME__')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: __BUILD__

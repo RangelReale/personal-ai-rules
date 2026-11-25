@@ -19,18 +19,34 @@ stage: early          # early | established
 language: rust        # the main language: android | rust | go | cpp | none
 features: [release, changelog]   # any of: ci, release, changelog, dependabot, license
 release-environment: release     # environment with the signing secrets; '' = repository secrets
+custom: []            # features whose workflow the repository writes itself: ci, release
+ci-check: CI result   # the check branch protection requires (default `CI result`)
 components:           # other parts, each in its own folder, built on the main code
   - name: android
-    language: android # android | ios
+    language: android # android | ios | other
     path: apps/android
     native: rust      # android only: rust | go | none
+  - name: tizen
+    language: other   # any other platform: a TV, a console, a web front end
+    path: ports/tizen tools/port/tizen   # one or more paths, separated by spaces
+    build: bash tools/port/tizen/build.sh # other only: builds it without signing
 ```
 
 **Main language and components.** Most repositories have one main language at the root: it holds
 the version, its CI job is `build`, and its release job builds the main files. Apps for other
-platforms in sub-folders (an Android app on a Rust library, an iOS port of a Go server) are
-components: each gets its own CI and release job, gated on its folder or the main code changing, and
-takes its version from the tag. A component's `name` names its jobs and artifacts.
+platforms in sub-folders (an Android app on a Rust library, an iOS port of a Go server, a TV app
+packed in Docker) are components: each gets its own CI and release job, gated on its paths or the
+main code changing, and takes its version from the tag. A component's `name` names its jobs and
+artifacts; the first of its `path`s is its main folder. `other` covers every platform without a
+skill of its own: the record names the one command that builds it (`build`), and the repository's
+`CLAUDE.md` holds its specifics.
+
+**Custom workflows.** A repository whose CI or release does more than the templates can (signing
+for several stores, a platform matrix of its own, a release script) lists that feature in
+`custom`: `check` then audits the contract in "Custom workflows" below instead of comparing the
+file with the template, and no fix replaces the file. A workflow without the `# Managed by
+personal-rules` header line was written by the project: never replace it with a template. Propose
+`custom` for it, or a move to the template only when the template does everything it does.
 
 Missing record: survey the repository and show the guess; write the file only after the user
 confirms.
@@ -38,10 +54,19 @@ confirms.
   `settings.gradle.kts`/`build.gradle.kts` for a standalone Android app).
 - Components: every folder below the root with a `gradlew` (android; `native` from the main
   language when its build copies a library into `jniLibs`), or an iOS project (`*.xcodeproj`,
-  `project.yml`, `Package.swift`) with a `build.sh` (ios). Typical folders: `android/`,
-  `apps/<name>-android`, `ports/android`, `ports/ios`.
-- Features: from the files below. Stage: `established` if `master` has a ruleset or branch
-  protection, else `early`.
+  `project.yml`, `Package.swift`) with a `build.sh` or a Taskfile task that builds it (ios).
+  Typical folders: `android/`, `apps/<name>-android`, `ports/android`, `ports/ios`.
+  Then `other`: a platform's project or manifest (`tizen-manifest.xml`, a Tizen `config.xml`,
+  webOS `appinfo.json`, `*.csproj` of a port, a `Dockerfile` that cross-builds one), a build
+  script per platform (`tools/port/<platform>/build.sh`, Taskfile tasks such as
+  `build:<platform>`), and every platform a release job builds that no component covers. A
+  platform may have no folder of its own (a `webos.rs` in the main code and its scripts): its
+  `path` lists the scripts' folder and the files only it uses. Two products with ports of their
+  own (`ports/<product>/<platform>`) get one component each, named `<product>-<platform>`.
+- Features: from the files below. A workflow without the `# Managed by personal-rules` header is
+  `custom` (see "Custom workflows"). `ci-check`: the check the protection requires, when it is
+  not `CI result`. Stage: `established` if `master` has a ruleset or branch protection, else
+  `early`.
 - `release-environment`: `release` if the repository has that environment
   (`gh api repos/{owner}/{repo}/environments`), else `''`. An existing repository keeps its
   repository secrets unless the user chooses to move them (see "Release environment").
@@ -81,6 +106,10 @@ code. For a component, check inside its `path`.
   or a Taskfile task; the CI job runs it); generated Xcode projects (`project.yml` with XcodeGen)
   and build outputs gitignored. There is no iOS skill: the repository's `CLAUDE.md` holds the iOS
   specifics.
+- `other` (component only): `build` names a command that exists (the script, or the Taskfile task)
+  and builds the component without signing or a device; a CI or release job runs it; its build
+  outputs are gitignored; every `path` exists. The repository's `CLAUDE.md` (or the document it
+  points to) says how to build, install and test it on the platform.
 - `rust`: `rust-toolchain.toml` with an exact `channel`; `rust-version` equals it;
   `[workspace.package] version` (or `[package] version`); `Cargo.lock` committed for applications.
 - `go`: `go.mod` with a `go` line; `gofmt -l .` prints nothing.
@@ -96,6 +125,9 @@ the user asks for `/personal-rules:add-ci`); it is required in stage `establishe
 
 ### `ci`
 
+With `ci` in `custom`, audit "Custom workflows" below instead of this list, apart from the path
+rules and the stage.
+
 - `.github/workflows/ci.yml` equals `templates/workflows/ci-<language>.yml` (`ci-generic.yml` for
   `none`) with the rules ref filled in, apart from the options the project set in `with:` and the
   component jobs below.
@@ -107,8 +139,10 @@ the user asks for `/personal-rules:add-ci`); it is required in stage `establishe
   `CI result` with `if: always()` needing every other job.
 - Components: `changes` gets `components:` with one `<name>: <path>` line per component, and each
   component has the job of `templates/workflows/ci-component-<language>.yml` (placeholders
-  `__NAME__`, `__PATH__`, `__NATIVE__` filled; the commented `pre-build` set from the repository's
-  own native build, for example its Taskfile), listed in `ci-result`'s `needs`.
+  `__NAME__`, `__PATH__` (its first path), `__NATIVE__` and `__BUILD__` filled; the commented
+  `pre-build` set from the repository's own native build, for example its Taskfile), listed in
+  `ci-result`'s `needs`. An `other` component whose build needs a runner or tools the template
+  lacks keeps the job's `if` and `needs`, and changes its steps.
 - The ref is a tag of this repository; an older tag than the plugin's is `differs` (offer the
   upgrade, and read this repository's `CHANGELOG.md` for what changed).
 - Not allowed in stage `early` unless the user asks: early projects have no CI.
@@ -136,12 +170,15 @@ builds`), and a rule whose paths no longer exist.
 
 ### `release`
 
+With `release` in `custom`, audit "Custom workflows" below instead of the first and third items.
+
 - `.github/workflows/release.yml` equals `templates/workflows/release-<language>.yml`, ref filled
   and `__RELEASE_ENVIRONMENT__` set to the record's `release-environment`.
 - Version files: `rust` → `Cargo.toml`; `cpp` → `CMakeLists.txt` (or a `version-define`); `go` and
   `android` → none (the tag is the version). Components never hold a version of their own.
-- Components: each has the job of `templates/workflows/release-component-<language>.yml`, listed
-  in `publish`'s `needs`.
+- Components: each has the job of `templates/workflows/release-component-<language>.yml`
+  (placeholders as in `ci`), listed in `publish`'s `needs`. An `other` component uploads its
+  package as an artifact named `release-<name>`, which `publish` attaches.
 - Release environment (when `release-environment` is not empty and a release job signs): the
   environment exists; create it, after asking, with
   `gh api -X PUT repos/{owner}/{repo}/environments/release`, then limit it to release tags:
@@ -153,9 +190,32 @@ builds`), and a rule whose paths no longer exist.
   level while the record names an environment (or the reverse) are `differs`: explain the move in
   "Release environment" and let the user choose to move them or change the record.
 
+### Custom workflows
+
+A feature in `custom` keeps its own workflow file. `check` audits only what the other rules and
+commands rely on; each fix is an edit to the project's file, shown and agreed first, never a
+replacement. `differs` lines name the missing piece.
+
+- `ci`: runs on pushes to the default branch and on pull requests; one job, named as `ci-check`,
+  with `if: always()`, needs every other job and fails when any of them failed or was cancelled
+  (skipped passes); the protection requires that name. Pull request runs are titled with the
+  `run-name` expression (`⚠️` only). Path rules as in "Path rules" (by any means: `changes.yml`,
+  `dorny/paths-filter`, a script): every top-level folder and every component path is covered,
+  docs-only changes build nothing, a component's job is gated on its paths or the main code. Each
+  component has a job that builds it on pull requests that touch it; a component that only the
+  release builds is `⚠️ ci  differs: <name> built only at release`. With `changelog`: a job checks
+  the fragments on pull requests.
+- `release`: starts on `v*` tags; fails when the tag differs from the version in the manifest
+  (when the language keeps one); builds every component; publishes the GitHub release (a
+  prerelease for `-rc.N`), with the changelog section as its notes when `changelog` is a feature;
+  signs only in jobs that use the record's `release-environment`.
+- Where a reusable workflow of this repository does the same job as the project's step (the
+  changelog check, the version check), say so as a suggestion (`ℹ️`), not as `differs`.
+
 ### `changelog`
 
-- `changelog.d/README.md` equals `templates/repo/changelog.d-README.md`.
+- `changelog.d/README.md` equals `templates/repo/changelog.d-README.md`; the project's own text is
+  `ok` when it keeps the same file names (`<branch>.<type>.md`) and types.
 - `CHANGELOG.md` exists (create the Keep a Changelog header when missing).
 - With `ci`: the `changelog` job is in `ci.yml`.
 - The `no-changelog` label exists (`gh label list`); create it with
@@ -178,7 +238,8 @@ builds`), and a rule whose paths no longer exist.
 - A ruleset protects the default branch with the content of `templates/github/ruleset-master.json`:
   `gh api repos/{owner}/{repo}/rulesets` lists it; compare its rules
   (`gh api repos/{owner}/{repo}/rulesets/<id>`). Classic branch protection with the same effect
-  counts as `ok`.
+  counts as `ok`. The required check is the record's `ci-check` (default `CI result`); fill it
+  into the ruleset's `required_status_checks` in place of `CI result`.
 - Repository settings allow merge commits (`gh api repos/{owner}/{repo} --jq .allow_merge_commit`).
 - Apply or change a ruleset only through `/personal-rules:establish`, after showing the JSON and
   getting a yes.
@@ -189,7 +250,9 @@ One line per item, grouped (Base, Language and components, Features, Stage):
 
 ```
 ✅ gitattributes        ok
-⚠️ ci                   differs: run-name missing; ref v0.1.0 < v0.3.0
+⚠️ ci                   differs: run-name missing; ref v0.1.0 < v0.3.0; webos built only at release
+✅ release              ok (custom: tag check, 9 platforms, notes from CHANGELOG.md)
+➖ license              not a feature of this repository
 ❌ changelog            missing: changelog.d/README.md
 ➖ dependabot           not a feature of this repository
 ```
