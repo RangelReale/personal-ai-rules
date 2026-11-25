@@ -5,7 +5,8 @@ name: changelog-check
 # - a change of kind "code" adds at least one fragment, unless the pull request has the label
 #   no-changelog (for changes people who use the project would not notice) or comes from
 #   Dependabot;
-# CHANGELOG.md itself may change only together with removed fragments (a release).
+# CHANGELOG.md itself may change only together with removed fragments (a release); adding it
+# (setting up the changelog) is allowed.
 # Without a changelog.d/ folder there is nothing to check, so callers can always include this job.
 # Callers trigger on pull_request types labeled and unlabeled too, so adding the label re-runs it.
 on:
@@ -59,7 +60,7 @@ jobs:
           fi
           added=$(git diff --name-only --diff-filter=A "$BASE" HEAD -- changelog.d/ | grep -v '/README.md$' || true)
           removed=$(git diff --name-only --diff-filter=D "$BASE" HEAD -- changelog.d/ || true)
-          if git diff --quiet "$BASE" HEAD -- CHANGELOG.md; then :; elif [ -z "$removed" ]; then
+          if git diff --quiet --diff-filter=M "$BASE" HEAD -- CHANGELOG.md; then :; elif [ -z "$removed" ]; then
             echo "::error file=CHANGELOG.md::Do not edit CHANGELOG.md; add a fragment in changelog.d/. Only a release merges them."
             status=1
           fi

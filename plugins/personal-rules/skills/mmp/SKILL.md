@@ -61,7 +61,9 @@ on a failure: never merge a red branch.
    request attribution. Several commits take a title of their own for the whole branch.
 3. Wait, in the background, after the last push:
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wait-pr.sh" <n>`.
-   It returns only when no check is pending, including checks that are not required.
+   It returns only when no check is pending, including checks that are not required, and counts
+   only the newest run of each check (a run cancelled by a newer push or label can leave a stale
+   failed `CI result` behind).
    - exit 0: every check finished, no required check failed, nothing blocks the merge. Go on, and
      report any check that is not required and failed (the output lists them under `failed:`).
    - exit 1: a required check failed (read `gh run view <run> --log-failed` and report it; a fix in

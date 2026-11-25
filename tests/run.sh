@@ -107,6 +107,38 @@ expect "push to master: full matrix" "$(EVENT=push BEFORE=$base GITHUB_REF=refs/
 echo doc >> README.md && git add -A && git commit -qm pushdoc
 expect "docs push to master: no build" "$(EVENT=push BEFORE=$base GITHUB_REF=refs/heads/master OUT='kind\|full' classify)" 'docs false'
 
+# --- changelog-check.yml: fragments and CHANGELOG.md on a pull request
+step_script "$W/changelog-check.yml" "name: Fragments" > "$tmp/clcheck.sh"
+mkdir "$tmp/k" && cd "$tmp/k" || exit 1
+git init -q -b master
+git config user.email test@example.com
+git config user.name test
+git config core.autocrlf false
+mkdir changelog.d && echo doc > changelog.d/README.md && echo code > main.c
+git add -A && git commit -qm base
+kbase=$(git rev-parse HEAD)
+clcheck() { # prints the exit code, then resets
+  BASE=$kbase KIND=${KIND:-code} NO_CHANGELOG=${NO_CHANGELOG:-false} bash "$tmp/clcheck.sh" > /dev/null 2>&1
+  echo $?
+  git reset -q --hard "$kbase"
+}
+echo more >> main.c && git add -A && git commit -qm c
+expect "changelog-check: code without a fragment fails" "$(clcheck)" 1
+echo more >> main.c && git add -A && git commit -qm c
+expect "changelog-check: no-changelog label passes" "$(NO_CHANGELOG=true clcheck)" 0
+echo more >> main.c && echo "- y" > changelog.d/y.fixed.md && git add -A && git commit -qm c
+expect "changelog-check: code with a fragment passes" "$(clcheck)" 0
+echo "# Changelog" > CHANGELOG.md && git add -A && git commit -qm setup
+expect "changelog-check: adding CHANGELOG.md passes" "$(KIND=version NO_CHANGELOG=true clcheck)" 0
+echo "# Changelog" > CHANGELOG.md && git add -A && git commit -qm setup
+kbase=$(git rev-parse HEAD)
+echo "edit" >> CHANGELOG.md && git add -A && git commit -qm edit
+expect "changelog-check: editing CHANGELOG.md fails" "$(KIND=version NO_CHANGELOG=true clcheck)" 1
+echo "- z" > changelog.d/z.added.md && git add -A && git commit -qm frag
+kbase=$(git rev-parse HEAD)
+git rm -q changelog.d/z.added.md && echo "## [1.0.0]" >> CHANGELOG.md && git add -A && git commit -qm release
+expect "changelog-check: a release edits CHANGELOG.md" "$(KIND=version clcheck)" 0
+
 # --- changelog.sh and the notes release-publish.yml extracts
 mkdir -p "$tmp/l/changelog.d" && cd "$tmp/l" || exit 1
 echo doc > changelog.d/README.md
@@ -165,8 +197,20 @@ expect "wait-pr: waits for checks to appear" \
   "$(wait_pr "BLOCKED|[]|[]
 BLOCKED|[$P]|[]
 CLEAN|[$CI_OK,$OK]|[$CI_OK]")" "0 3"
-expect "wait-pr: a required failure stops at once" \
-  "$(wait_pr "BLOCKED|[$CI_FAIL,$P]|[$CI_FAIL]")" "1 1"
+expect "wait-pr: a required failure is final once nothing is pending" \
+  "$(wait_pr "BLOCKED|[$CI_FAIL,$P]|[$CI_FAIL]
+BLOCKED|[$CI_FAIL,$OK]|[$CI_FAIL]")" "1 2"
+# A run cancelled by a newer one (job 10) left a failed CI result; the newer run (jobs 20, 30)
+# is still building, then passes.
+OLD_FAIL='{"name":"CI result","bucket":"fail","link":"https://github.com/o/r/actions/runs/1/job/10"}'
+NEW_P='{"name":"build","bucket":"pending","link":"https://github.com/o/r/actions/runs/2/job/20"}'
+NEW_B='{"name":"build","bucket":"pass","link":"https://github.com/o/r/actions/runs/2/job/20"}'
+NEW_OK='{"name":"CI result","bucket":"pass","link":"https://github.com/o/r/actions/runs/2/job/30"}'
+expect "wait-pr: a cancelled run's stale failure is replaced by the newer run" \
+  "$(wait_pr "BLOCKED|[$OLD_FAIL,$NEW_P]|[$OLD_FAIL]
+BLOCKED|[$OLD_FAIL,$NEW_P]|[$OLD_FAIL]
+CLEAN|[$OLD_FAIL,$NEW_B,$NEW_OK]|[$OLD_FAIL,$NEW_OK]")" "0 3"
+expect "wait-pr: the stale failure is not listed" "$(grep -c '^failed:' out)" 0
 expect "wait-pr: a failure that is not required passes once all finish" \
   "$(wait_pr "UNSTABLE|[$CI_OK,$X_FAIL,$P]|[$CI_OK]
 UNSTABLE|[$CI_OK,$X_FAIL]|[$CI_OK]")" "0 2"

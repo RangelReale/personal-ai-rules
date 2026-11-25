@@ -6,8 +6,11 @@
 #
 # Exit 0: no check is pending, no required check failed, and the merge state is not blocked
 #         (checks that are not required may have failed: they are listed).
-# Exit 1: a required check failed or was cancelled, the branch is DIRTY/BEHIND, or something
-#         other than checks (a review, a rule) blocks the merge.
+# Exit 1: a required check failed or was cancelled once nothing is pending, the branch is
+#         DIRTY/BEHIND, or something other than checks (a review, a rule) blocks the merge.
+# Only the newest run of each check counts, as for GitHub: a run that a newer push or label
+# cancelled can leave a failed "CI result" behind, which the newer run's result replaces. For
+# the same reason a required failure is final only when no check is pending.
 # Exit 2: checks still pending at the time limit; run it again.
 # Exit 3: the pull request is no longer open (merged or closed); the output says which.
 # Run it in the background after the last push. WAIT_PR_INTERVAL sets the seconds between polls.
@@ -20,6 +23,11 @@ interval=${WAIT_PR_INTERVAL:-30}
 no_checks_grace=${WAIT_PR_NO_CHECKS:-300}
 
 count() { jq "[.[] | select($1)] | length" <<< "$2"; }
+# The newest run of each check, by its job id (the number at the end of the link; GitHub's ids
+# grow with time). Checks without a job link count as id 0.
+newest() {
+  jq '[group_by(.name)[] | max_by((.link // "") | (capture("/job/(?<id>[0-9]+)")? | .id | tonumber) // 0)]' <<< "$1"
+}
 
 elapsed=0 blocked_polls=0 result=""
 while :; do
@@ -27,16 +35,17 @@ while :; do
   pr_state=${view%% *} state=${view#* }
   if [ "$pr_state" != OPEN ]; then result=$(tr '[:upper:]' '[:lower:]' <<< "$pr_state"); fi
   # gh exits non-zero while checks are pending or failed; the JSON is still printed.
-  all=$(gh pr checks "$n" --json name,bucket 2>/dev/null || true)
-  required=$(gh pr checks "$n" --required --json name,bucket 2>/dev/null || true)
+  all=$(gh pr checks "$n" --json name,bucket,link 2>/dev/null || true)
+  required=$(gh pr checks "$n" --required --json name,bucket,link 2>/dev/null || true)
   [ -n "$all" ] || all='[]'
   [ -n "$required" ] || required='[]'
+  all=$(newest "$all") required=$(newest "$required")
   total=$(count true "$all")
   pending=$(count '.bucket == "pending"' "$all")
   required_failed=$(count '.bucket == "fail" or .bucket == "cancel"' "$required")
 
   if [ -n "$result" ]; then break; fi
-  if [ "$required_failed" -gt 0 ]; then result=failed; break; fi
+  if [ "$required_failed" -gt 0 ] && [ "$pending" -eq 0 ]; then result=failed; break; fi
   case "$state" in DIRTY | BEHIND) result=conflict; break ;; esac
   if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
     case "$state" in
