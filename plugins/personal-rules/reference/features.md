@@ -30,6 +30,7 @@ components:           # other parts, each in its own folder, built on the main c
     language: other   # any other platform: a TV, a console, a web front end
     path: ports/tizen tools/port/tizen   # one or more paths, separated by spaces
     build: bash tools/port/tizen/build.sh # other only: builds it without signing
+    release-only: true # optional: only the release builds it; CI has no job for it
 ```
 
 **Main language and components.** Most repositories have one main language at the root: it holds
@@ -143,6 +144,11 @@ rules and the stage.
   `pre-build` set from the repository's own native build, for example its Taskfile), listed in
   `ci-result`'s `needs`. An `other` component whose build needs a runner or tools the template
   lacks keeps the job's `if` and `needs`, and changes its steps.
+- A component with `release-only: true` has no CI job: its build costs more runner time than
+  catching a break before the release is worth (a Docker toolchain, a store SDK). Its paths still
+  go into `changes`'s `components:`, so changes there skip the main build, and the release must
+  still build it. `check` reports it as `ℹ️` (a break there shows at the next release), never as
+  `differs`; propose `release-only` only when the user chooses it, since the default is a job.
 - The ref is a tag of this repository; an older tag than the plugin's is `differs` (offer the
   upgrade, and read this repository's `CHANGELOG.md` for what changed).
 - Not allowed in stage `early` unless the user asks: early projects have no CI.
@@ -203,8 +209,9 @@ replacement. `differs` lines name the missing piece.
   `dorny/paths-filter`, a script): every top-level folder and every component path is covered,
   docs-only changes build nothing, a component's job is gated on its paths or the main code. Each
   component has a job that builds it on pull requests that touch it; a component that only the
-  release builds is `⚠️ ci  differs: <name> built only at release`. With `changelog`: a job checks
-  the fragments on pull requests.
+  release builds is `⚠️ ci  differs: <name> built only at release`, unless the record marks it
+  `release-only` (then `ℹ️`, and its paths need only skip the main build). With `changelog`: a
+  job checks the fragments on pull requests.
 - `release`: starts on `v*` tags; fails when the tag differs from the version in the manifest
   (when the language keeps one); builds every component; publishes the GitHub release (a
   prerelease for `-rc.N`), with the changelog section as its notes when `changelog` is a feature;
