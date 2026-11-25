@@ -29,16 +29,24 @@ jobs:
     uses: RangelReale/personal-ai-rules/.github/workflows/changes.yml@__RULES_REF__
     with:
       version-files: CMakeLists.txt
-      # Components (see ci-component-*.yml), one per line: <name>: <folder>
+      # More paths that never need a build (docs, *.md, .claude/, issue templates and editor
+      # settings are built in):
+      # ignore: site/ tools/dev/ Taskfile.yml
+      # Components (see ci-component-*.yml), one per line: <name>: <paths>
       # components: |
       #   android: apps/android
+      # Signals for jobs only some files need, one per line: <name>: <paths>
+      # groups: |
+      #   assets: assets/
 
   build:
     needs: changes
     if: needs.changes.outputs.main == 'true'
     uses: RangelReale/personal-ai-rules/.github/workflows/cpp-ci.yml@__RULES_REF__
-    # with:
-    #   matrix: '[{"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"}]'
+    with:
+      full: ${{ needs.changes.outputs.full }}  # all platforms only when it matters
+      # Without a linux preset, the quick matrix is the Windows build:
+      # quick-matrix: '[{"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"}]'
 
   # Fragments in changelog.d/; passes when the repository keeps none.
   changelog:

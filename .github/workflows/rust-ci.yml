@@ -2,14 +2,36 @@ name: rust-ci
 
 # Rust checks: cargo fmt --check, clippy -D warnings, cargo test, all --locked.
 # The toolchain comes from rust-toolchain.toml (an exact pin), so a new lint cannot fail a branch
-# that changed nothing.
+# that changed nothing. An optional cargo-deny job checks dependencies when they change.
 on:
   workflow_call:
     inputs:
       os:
-        description: JSON list of runner images
+        description: JSON list of runner images (the full matrix)
         type: string
         default: '["ubuntu-26.04"]'
+      full:
+        description: >-
+          'false' runs only quick-os (pull requests that change no workflow, toolchain or lockfile:
+          the `full` output of changes.yml); anything else runs `os`
+        type: string
+        default: 'true'
+      quick-os:
+        description: JSON list of runner images when full is 'false'
+        type: string
+        default: '["ubuntu-26.04"]'
+      deny:
+        description: >-
+          'true' runs `cargo deny check bans licenses sources` (needs deny.toml), for example when
+          the deps group of changes.yml (Cargo.lock, deny.toml) changed
+        type: string
+        default: 'false'
+      deny-advisories:
+        description: >-
+          'true' also checks advisories, which change outside the repository; best on a schedule or
+          a manual run, not on every pull request
+        type: string
+        default: 'false'
       cargo-args:
         description: Extra arguments for clippy and test, for example --all-features
         type: string
@@ -27,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.os) }}
+        os: ${{ fromJSON(inputs.full == 'false' && inputs.quick-os || inputs.os) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -70,3 +92,30 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           cargo test --workspace --locked $CARGO_ARGS
+
+  deny:
+    if: inputs.deny == 'true' || inputs.deny-advisories == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: taiki-e/install-action@v2
+        with:
+          # A minor release of cargo-deny can move a flag; raise it deliberately.
+          tool: cargo-deny@0.20
+
+      - name: cargo deny
+        shell: bash
+        env:
+          DENY: ${{ inputs.deny }}
+          ADVISORIES: ${{ inputs.deny-advisories }}
+        run: |
+          if [ ! -f deny.toml ]; then
+            echo "No deny.toml: nothing for cargo deny to check."
+            exit 0
+          fi
+          checks=()
+          if [ "$DENY" = true ]; then checks+=(bans licenses sources); fi
+          if [ "$ADVISORIES" = true ]; then checks+=(advisories); fi
+          cargo deny --locked check "${checks[@]}"

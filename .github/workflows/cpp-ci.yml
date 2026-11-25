@@ -1,20 +1,37 @@
 name: cpp-ci
 
 # C++/Qt/CMake checks: download Qt with the project's setup script, then configure, build and test
-# with CMake presets. Tests run through ctest, which sets the offscreen Qt platform.
+# with CMake presets. Tests run through ctest, which sets the offscreen Qt platform. ccache keeps
+# compiled objects between runs; only pushes to the default branch save its cache.
 on:
   workflow_call:
     inputs:
       matrix:
         description: >-
           JSON list of {os, preset, setup}: the runner, the CMake configure/build/test preset, and
-          the command that downloads Qt into .qt/ (or $QT_ROOT).
+          the command that downloads Qt into .qt/ (or $QT_ROOT). The full matrix.
         type: string
         default: >-
           [
             {"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"},
             {"os": "macos-26", "preset": "macos", "setup": "sh scripts/setup.sh"}
           ]
+      full:
+        description: >-
+          'false' runs only quick-matrix (pull requests that change no workflow, toolchain or
+          lockfile: the `full` output of changes.yml); anything else runs `matrix`
+        type: string
+        default: 'true'
+      quick-matrix:
+        description: >-
+          The matrix when full is 'false'. The default needs a `linux` preset; a project without
+          one passes its Windows entry instead.
+        type: string
+        default: '[{"os": "ubuntu-26.04", "preset": "linux", "setup": "sh scripts/setup.sh"}]'
+      ccache:
+        description: "'false' turns ccache off (it compiles through CMAKE_<LANG>_COMPILER_LAUNCHER)"
+        type: string
+        default: 'true'
       linux-packages:
         description: apt packages to install on Linux runners (space separated)
         type: string
@@ -32,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.matrix) }}
+        include: ${{ fromJSON(inputs.full == 'false' && inputs.quick-matrix || inputs.matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -69,8 +86,25 @@ jobs:
       - name: Download Qt
         run: ${{ matrix.setup }}
 
+      - name: ccache
+        if: inputs.ccache != 'false'
+        uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: ${{ matrix.os }}-${{ matrix.preset }}
+          max-size: 500M
+          save: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') }}
+
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        shell: bash
+        env:
+          PRESET: ${{ matrix.preset }}
+          CCACHE: ${{ inputs.ccache }}
+        run: |
+          args=(--preset "$PRESET")
+          if [ "$CCACHE" != false ]; then
+            args+=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+          fi
+          cmake "${args[@]}"
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
