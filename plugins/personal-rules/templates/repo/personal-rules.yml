@@ -17,4 +17,5 @@ custom: []
 #                           # one or more paths separated by spaces, the main folder first
 #     native: rust          # android only: the native library it bundles: rust | go | none
 #     build: bash tools/port/tv/build.sh   # other only: builds it without signing
+#     release-only: true    # only the release builds it; CI has no job for it
 components: []
