@@ -131,6 +131,51 @@ RUNNER_TEMP=$tmp VERSION=1.2.0 CHANGELOG=CHANGELOG.md bash "$tmp/notes.sh" > /de
 expect "notes first line" "$(head -1 "$tmp/notes.md")" "### Added"
 expect "notes stop at next section" "$(grep -c 'later' "$tmp/notes.md")" 0
 
+# --- wait-pr.sh, against a fake gh that replays one line per poll: <state>|<all checks>|<required>
+mkdir -p "$tmp/w/bin" && cd "$tmp/w" || exit 1
+cat > bin/gh <<'EOF'
+#!/usr/bin/env bash
+# Fake gh for wait-pr.sh: `pr view` advances to the next line of $SCENARIO (the last repeats).
+counter="$SCENARIO.n"
+i=$(cat "$counter" 2>/dev/null || echo 0)
+if [ "$1 $2" = "pr view" ]; then i=$((i + 1)); echo "$i" > "$counter"; fi
+line=$(sed -n "${i}p" "$SCENARIO"); [ -n "$line" ] || line=$(tail -1 "$SCENARIO")
+IFS='|' read -r state all required <<< "$line"
+case "$*" in
+  "pr view"*) echo "${PR_STATE:-OPEN} $state" ;;
+  *--required*--json*) echo "$required" ;;
+  *--json*) echo "$all" ;;
+esac
+EOF
+chmod +x bin/gh
+wait_pr() { # $1 scenario lines; prints the exit code
+  printf '%s\n' "$1" > scenario; rm -f scenario.n
+  PATH="$tmp/w/bin:$PATH" SCENARIO="$tmp/w/scenario" WAIT_PR_INTERVAL=0 WAIT_PR_NO_CHECKS=0 \
+    bash "$root/plugins/personal-rules/scripts/wait-pr.sh" 7 1 > out 2>&1
+  echo "$? $(cat scenario.n)"
+}
+P='{"name":"build","bucket":"pending"}' OK='{"name":"build","bucket":"pass"}'
+CI_OK='{"name":"CI result","bucket":"pass"}' CI_FAIL='{"name":"CI result","bucket":"fail"}'
+X_FAIL='{"name":"macos","bucket":"fail"}'
+expect "wait-pr: waits while a check that is not required is pending" \
+  "$(wait_pr "UNSTABLE|[$CI_OK,$P]|[$CI_OK]
+UNSTABLE|[$CI_OK,$P]|[$CI_OK]
+CLEAN|[$CI_OK,$OK]|[$CI_OK]")" "0 3"
+expect "wait-pr: waits for checks to appear" \
+  "$(wait_pr "BLOCKED|[]|[]
+BLOCKED|[$P]|[]
+CLEAN|[$CI_OK,$OK]|[$CI_OK]")" "0 3"
+expect "wait-pr: a required failure stops at once" \
+  "$(wait_pr "BLOCKED|[$CI_FAIL,$P]|[$CI_FAIL]")" "1 1"
+expect "wait-pr: a failure that is not required passes once all finish" \
+  "$(wait_pr "UNSTABLE|[$CI_OK,$X_FAIL,$P]|[$CI_OK]
+UNSTABLE|[$CI_OK,$X_FAIL]|[$CI_OK]")" "0 2"
+expect "wait-pr: lists the failure that is not required" "$(grep -c '^failed: macos' out)" 1
+expect "wait-pr: blocked by something other than checks" \
+  "$(wait_pr "BLOCKED|[$CI_OK]|[$CI_OK]")" "1 3"
+expect "wait-pr: conflict" "$(wait_pr "DIRTY|[$P]|[]")" "1 1"
+expect "wait-pr: already merged" "$(PR_STATE=MERGED wait_pr "UNKNOWN|[$OK]|[]")" "3 1"
+
 # --- the always-on rules fit the SessionStart context limit
 cd "$root" || exit 1
 size=$(wc -c < plugins/personal-rules/rules/always.md)
