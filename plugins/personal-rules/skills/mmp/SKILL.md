@@ -61,12 +61,16 @@ on a failure: never merge a red branch.
    request attribution. Several commits take a title of their own for the whole branch.
 3. Wait, in the background, after the last push:
    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/wait-pr.sh" <n>`.
-   - exit 0 (`CLEAN`, or `UNSTABLE` with only checks that are not required failing): go on, and
-     report those failures.
+   It returns only when no check is pending, including checks that are not required.
+   - exit 0: every check finished, no required check failed, nothing blocks the merge. Go on, and
+     report any check that is not required and failed (the output lists them under `failed:`).
    - exit 1: a required check failed (read `gh run view <run> --log-failed` and report it; a fix in
-     this branch is a new commit, push and wait), or the branch is `DIRTY`/`BEHIND` (stop: the user
-     decides how to bring it up to date).
+     this branch is a new commit, push and wait), the branch is `DIRTY`/`BEHIND` (stop: the user
+     decides how to bring it up to date), or something other than checks blocks the merge, such as
+     a required review (stop and say so).
    - exit 2: still running after the time limit; run it again.
+   - exit 3: the pull request was merged or closed meanwhile; check which, and clean up only if
+     it was merged.
 4. `gh pr merge <n> --merge` (a merge commit; never squash or rebase; no `--delete-branch`, which
    fails from a worktree). Confirm with `gh pr view <n> --json state,headRefOid,mergeCommit` that
    the state is `MERGED`.

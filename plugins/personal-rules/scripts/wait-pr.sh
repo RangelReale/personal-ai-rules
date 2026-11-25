@@ -1,31 +1,68 @@
 #!/usr/bin/env bash
-# Waits until a pull request can be merged or cannot: polls its merge state, because
-# `gh pr checks --watch` can return before the required checks exist.
+# Waits until a pull request's checks have all finished, then says whether it can be merged.
+# It polls instead of `gh pr checks --watch`, which can return before the checks exist.
 #
 #   wait-pr.sh <number> [minutes, default 55]
 #
-# Prints `state=<mergeStateStatus>` and the checks, and exits 0 when the state is CLEAN (or
-# HAS_HOOKS), 1 when a required check failed or the branch is DIRTY/BEHIND, 2 on a timeout.
-# Run it in the background after the last push.
+# Exit 0: no check is pending, no required check failed, and the merge state is not blocked
+#         (checks that are not required may have failed: they are listed).
+# Exit 1: a required check failed or was cancelled, the branch is DIRTY/BEHIND, or something
+#         other than checks (a review, a rule) blocks the merge.
+# Exit 2: checks still pending at the time limit; run it again.
+# Exit 3: the pull request is no longer open (merged or closed); the output says which.
+# Run it in the background after the last push. WAIT_PR_INTERVAL sets the seconds between polls.
 set -uo pipefail
 n=${1:?usage: wait-pr.sh <number> [minutes]}
-minutes=${2:-55}
-state=UNKNOWN
-for _ in $(seq 1 $((minutes * 2))); do
-  state=$(gh pr view "$n" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null || echo UNKNOWN)
-  failed=$(gh pr checks "$n" --required 2>/dev/null | grep -c -E '\bfail' || true)
-  if [ "$failed" != 0 ]; then break; fi
-  case "$state" in BLOCKED | UNKNOWN | UNSTABLE) ;; *) break ;; esac
-  # UNSTABLE: a check that is not required is still running or failed; keep waiting while
-  # anything runs, then go on.
-  if [ "$state" = UNSTABLE ] && ! gh pr checks "$n" 2>/dev/null | grep -q -E '\bpending'; then break; fi
-  sleep 30
+limit=$(( ${2:-55} * 60 ))
+interval=${WAIT_PR_INTERVAL:-30}
+# A push takes a moment to start its workflows: with no checks listed, wait this long before
+# deciding that the repository has none.
+no_checks_grace=${WAIT_PR_NO_CHECKS:-300}
+
+count() { jq "[.[] | select($1)] | length" <<< "$2"; }
+
+elapsed=0 blocked_polls=0 result=""
+while :; do
+  view=$(gh pr view "$n" --json state,mergeStateStatus --jq '.state + " " + .mergeStateStatus' 2>/dev/null || echo "OPEN UNKNOWN")
+  pr_state=${view%% *} state=${view#* }
+  if [ "$pr_state" != OPEN ]; then result=$(tr '[:upper:]' '[:lower:]' <<< "$pr_state"); fi
+  # gh exits non-zero while checks are pending or failed; the JSON is still printed.
+  all=$(gh pr checks "$n" --json name,bucket 2>/dev/null || true)
+  required=$(gh pr checks "$n" --required --json name,bucket 2>/dev/null || true)
+  [ -n "$all" ] || all='[]'
+  [ -n "$required" ] || required='[]'
+  total=$(count true "$all")
+  pending=$(count '.bucket == "pending"' "$all")
+  required_failed=$(count '.bucket == "fail" or .bucket == "cancel"' "$required")
+
+  if [ -n "$result" ]; then break; fi
+  if [ "$required_failed" -gt 0 ]; then result=failed; break; fi
+  case "$state" in DIRTY | BEHIND) result=conflict; break ;; esac
+  if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
+    case "$state" in
+      BLOCKED)
+        # Everything finished and nothing required failed, yet the merge is blocked: a review or
+        # a rule. Give GitHub two polls to update the state before saying so.
+        blocked_polls=$((blocked_polls + 1))
+        if [ "$blocked_polls" -ge 3 ]; then result=blocked; break; fi ;;
+      UNKNOWN) ;;
+      *) result=ready; break ;;
+    esac
+  elif [ "$total" -eq 0 ] && [ "$elapsed" -ge "$no_checks_grace" ]; then
+    case "$state" in BLOCKED | UNKNOWN) ;; *) result=ready; break ;; esac
+  fi
+  if [ "$elapsed" -ge "$limit" ]; then result=timeout; break; fi
+  sleep "$interval"
+  elapsed=$((elapsed + interval))
 done
-echo "state=$state"
-gh pr checks "$n" || true
-case "$state" in
-  CLEAN | HAS_HOOKS | UNSTABLE) [ "${failed:-0}" = 0 ] && exit 0 || exit 1 ;;
-  DIRTY | BEHIND) exit 1 ;;
-  BLOCKED) [ "${failed:-0}" != 0 ] && exit 1 || exit 2 ;;
-  *) exit 2 ;;
+
+echo "state=$state result=$result checks=$total pending=$pending required_failed=$required_failed"
+failed_other=$(jq -r '[.[] | select(.bucket == "fail" or .bucket == "cancel") | .name] | join(", ")' <<< "$all")
+[ -n "$failed_other" ] && echo "failed: $failed_other"
+gh pr checks "$n" 2>/dev/null || true
+case "$result" in
+  ready) exit 0 ;;
+  timeout) exit 2 ;;
+  merged | closed) exit 3 ;;
+  *) exit 1 ;;
 esac
