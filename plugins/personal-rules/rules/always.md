@@ -43,6 +43,13 @@ Read `.github/personal-rules.yml`. Its `stage` decides how work reaches `master`
 You may push work branches, open pull requests, merge them as above, and push release tags without
 asking. Never force-push, never push to a protected `master`, never rewrite pushed history.
 
+## CI runs only what a change needs
+
+CI time is expensive. When a change adds a folder, a sub-project or a CI job, update the path
+rules of `changes` in `.github/workflows/ci.yml` in the same change (`ignore`, `components`,
+`groups`), so documentation, tooling and unrelated parts do not start builds. Pull requests build on
+Linux; the full platform matrix runs on master and on toolchain, lockfile or workflow changes.
+
 ## Releases
 
 - The tag `vX.Y.Z` (or `vX.Y.Z-rc.N`, published as a prerelease) is the version. Where the language

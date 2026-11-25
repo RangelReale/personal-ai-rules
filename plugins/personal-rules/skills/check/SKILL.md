@@ -12,7 +12,9 @@ disable-model-invocation: true
    show the guessed record, and continue only after the user confirms or corrects it.
 3. Audit every item that applies (base, the main language, each component, each feature in
    `features`, the stage). Look for components the record does not list (folders with `gradlew`
-   or an iOS project) and report them as `differs`. Items
+   or an iOS project) and report them as `differs`. With `ci`, audit the path rules too (reference,
+   "Path rules"): list each top-level folder and whether a rule covers it, and propose `ignore`,
+   `components` and `groups` entries that would spare builds. Items
    for features the repository did not opt into are `➖`, not missing. Only read in this step:
    change nothing.
 4. Print the report in the format the reference gives. Say what you could not check (for example

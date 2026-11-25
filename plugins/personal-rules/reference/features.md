@@ -92,6 +92,8 @@ code. For a component, check inside its `path`.
 - `.github/workflows/ci.yml` equals `templates/workflows/ci-<language>.yml` (`ci-generic.yml` for
   `none`) with the rules ref filled in, apart from the options the project set in `with:` and the
   component jobs below.
+- The build job passes `full` (see "Path rules" below); Rust also passes `deny` from the `deps`
+  group.
 - Must have: the `run-name` expression (`PR #<n>: <title>`), `pull_request` types including
   `labeled` and `unlabeled`, `changes` → `build` gated on `needs.changes.outputs.main == 'true'`,
   the `changelog` job (it passes when there is no `changelog.d/`), and the `ci-result` job named
@@ -103,6 +105,27 @@ code. For a component, check inside its `path`.
 - The ref is a tag of this repository; an older tag than the plugin's is `differs` (offer the
   upgrade, and read this repository's `CHANGELOG.md` for what changed).
 - Not allowed in stage `early` unless the user asks: early projects have no CI.
+
+**Path rules: CI runs only what a change needs.** CI time is the main cost of these repositories,
+so every CI setup gets path rules fitted to the repository, and they are kept up to date (`check`
+compares them with the tree). Survey the tree and propose, for the user to confirm:
+- `ignore`: folders and files that no build or test reads, beyond the built-in list (`*.md`,
+  `docs/`, `LICENSE*`, `.claude/`, `.vscode/`, `.idea/`, `.editorconfig`, `.gitignore`, issue
+  templates, `dependabot.yml`, `personal-rules.yml`): a web site (`site/`), screenshots, design
+  notes, developer scripts no job runs (`tools/dev/`), `Taskfile.yml` when CI does not use it. Read
+  the workflows and build files before ignoring a path: anything a job or the build reads is code.
+- `components`: every sub-project in the record, so changes there skip the main build.
+- `groups`: a signal for each job that only some files need (`deps: Cargo.lock deny.toml` for
+  `cargo deny`; `assets: assets/` for an asset build; `web: web/` for a front end built apart), and
+  gate that job on `contains(fromJSON(needs.changes.outputs.groups), '<name>')`.
+- `full-paths`: files beyond the built-in list (workflows, toolchain pins, lockfiles,
+  `CMakePresets.json`, `.gitattributes`) that can break one platform and not another.
+- The build jobs pass `full: ${{ needs.changes.outputs.full }}`: pull requests build on Linux only,
+  and the whole platform matrix runs on pushes to the default branch and on `full` changes. A C++
+  project without a `linux` preset passes its Windows entry as `quick-matrix`.
+- After a change adds a folder or a job, update the rules in the same change.
+`check` reports a folder that no rule covers and no build reads (`⚠️ ci  differs: site/ triggers
+builds`), and a rule whose paths no longer exist.
 
 ### `release`
 
