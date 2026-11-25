@@ -24,7 +24,7 @@ The reference for every file is `${CLAUDE_PLUGIN_ROOT}/reference/features.md`.
 3. Write, in this order (work directly on `master` only for the very first commit of an empty
    repository; after that, use a worktree):
    - `.github/personal-rules.yml` from the template: `stage: early`, the language, the features,
-     the components, `version` = the plugin's version;
+     the components, `release-environment: release`, `version` = the plugin's version;
    - for each component, its folder and the gitignore lines for generated files (Android:
      `<path>/app/src/main/jniLibs/`);
    - the base items: `.gitignore`, `.gitattributes`, `.editorconfig`, `CLAUDE.md`, `README.md`;
@@ -32,8 +32,11 @@ The reference for every file is `${CLAUDE_PLUGIN_ROOT}/reference/features.md`.
 4. Do not scaffold application code unless the user asks; when they do, follow the language skill.
 5. Commit: `chore: set up the repository with personal-rules <version>`.
 6. Ask whether to create the GitHub repository. Only on a yes, run
-   `gh repo create <owner>/<name> --source . --push` with the visibility the user picks, then for
-   `release` with `android`, list the secrets to add (`ANDROID_KEYSTORE_BASE64`,
+   `gh repo create <owner>/<name> --source . --push` with the visibility the user picks. Then, for
+   `release` with an Android app (main or component): ask before creating the `release`
+   environment limited to `v*` tags (commands in the reference, "release"), and list the secrets
+   for the user to add to it, for example
+   `gh secret set ANDROID_KEYSTORE_BASE64 --env release < keystore.b64` (also
    `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`).
 7. Report the files written, the stage (`early`: merge locally, no CI), and that
    `/personal-rules:establish` switches to pull requests and CI when the code settles.

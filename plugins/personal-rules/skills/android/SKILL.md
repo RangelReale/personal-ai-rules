@@ -73,8 +73,11 @@ section adds to them.
 - Release signing is optional in Gradle: create the config only when `SIGNING_STORE_FILE` is set
   (with `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`). Local release
   builds then fall back to the debug key; CI refuses to publish a debug-signed APK.
-- Repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-  `ANDROID_KEY_PASSWORD`. Never commit a release keystore or its passwords.
+- Secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+  `ANDROID_KEY_PASSWORD`, in the GitHub environment named by `release-environment` in
+  `.github/personal-rules.yml` (`release` for new repositories), or at the repository level when
+  it is empty. Never commit a release keystore or its passwords, and never set or move secrets:
+  the user does.
 - Release asset: `<repository>-v<version>.apk`; a component adds its name
   (`<repository>-<name>-v<version>.apk`).
 

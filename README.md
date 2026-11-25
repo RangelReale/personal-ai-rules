@@ -73,6 +73,16 @@ components:
   - { name: ios, language: ios, path: ports/ios }
 ```
 
+### Release environment
+
+Signing secrets (the Android keystore, macOS certificates) live in the GitHub environment
+`release` in new repositories: only jobs that declare it can read them, and it admits only `v*`
+tags. Existing repositories can keep repository secrets: `release-environment: ''` in the record.
+Secret values cannot be read back, so moving them means entering each one again
+(`gh secret set NAME --env release`) and deleting the repository secret. The reusable signing
+workflows declare the environment themselves (callers cannot pass environment secrets) and read
+the secrets by name through `secrets: inherit`.
+
 ### Stages
 
 Each repository is in one of two stages, recorded in `.github/personal-rules.yml`:
