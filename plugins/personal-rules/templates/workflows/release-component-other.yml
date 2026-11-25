@@ -1,0 +1,17 @@
+# Jobs to add to release.yml for a component.
+  # Component __NAME__ (another platform): its build command with the tag's version in VERSION.
+  # Upload the package as release-__NAME__ to attach it to the release.
+  __NAME__:
+    needs: check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: __BUILD__
+      # - uses: actions/upload-artifact@v7
+      #   with:
+      #     name: release-__NAME__
+      #     path: <the package, for example dist/*.ipk>
