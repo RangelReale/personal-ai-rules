@@ -8,7 +8,8 @@ Outputs:
   ci-component-<kind>.yml, release-component-<kind>.yml
                                                jobs to add for a component (an Android app or an
                                                iOS port inside a Rust or Go repository)
-Placeholders: __RULES_REF__ (v<plugin version>); in component jobs __NAME__, __PATH__, __NATIVE__.
+Placeholders: __RULES_REF__ (v<plugin version>), __RELEASE_ENVIRONMENT__ (release-environment of
+the record, possibly empty); in component jobs __NAME__, __PATH__, __NATIVE__.
 """
 import os
 import sys
@@ -16,6 +17,13 @@ import sys
 OUT = sys.argv[1]
 REPO = "RangelReale/personal-ai-rules/.github/workflows"
 REF = "__RULES_REF__"
+
+# Signing jobs: the secrets ANDROID_* come from the `release-environment` of the record (normally
+# `release`) or, when it is empty, from repository secrets.
+ENVIRONMENT = """      # GitHub environment with the signing secrets ('' = repository secrets).
+      environment: '__RELEASE_ENVIRONMENT__'
+    secrets: inherit
+"""
 
 LANGS = {
     "go": {"version_files": "", "ci_with": "", "release_build": f"""  build:
@@ -41,12 +49,7 @@ LANGS = {
     uses: {REPO}/android-release.yml@{REF}
     with:
       version: ${{{{ needs.check.outputs.version }}}}
-    secrets:
-      keystore-base64: ${{{{ secrets.ANDROID_KEYSTORE_BASE64 }}}}
-      keystore-password: ${{{{ secrets.ANDROID_KEYSTORE_PASSWORD }}}}
-      key-alias: ${{{{ secrets.ANDROID_KEY_ALIAS }}}}
-      key-password: ${{{{ secrets.ANDROID_KEY_PASSWORD }}}}
-"""},
+{ENVIRONMENT}"""},
     "cpp": {"version_files": "CMakeLists.txt", "ci_with": """    # with:
     #   matrix: '[{"os": "windows-2025", "preset": "windows-ninja", "setup": "pwsh -File scripts/setup.ps1"}]'
 """, "release_build": f"""  build:
@@ -121,12 +124,7 @@ RELEASE_COMPONENTS = {
       # pre-build: >-
       #   cargo ndk -t arm64-v8a -t x86_64 -P 26 -o __PATH__/app/src/main/jniLibs
       #   build -p <ffi crate> --lib --release
-    secrets:
-      keystore-base64: ${{{{ secrets.ANDROID_KEYSTORE_BASE64 }}}}
-      keystore-password: ${{{{ secrets.ANDROID_KEYSTORE_PASSWORD }}}}
-      key-alias: ${{{{ secrets.ANDROID_KEY_ALIAS }}}}
-      key-password: ${{{{ secrets.ANDROID_KEY_PASSWORD }}}}
-""",
+{ENVIRONMENT}""",
     "ios": """  # iOS component __NAME__: signing needs an Apple certificate, so the default is an unsigned
   # build that checks the release still compiles. Upload a release-* artifact to attach a file.
   __NAME__:

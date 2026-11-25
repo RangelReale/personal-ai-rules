@@ -7,6 +7,11 @@ name: android-release
 # Gradle reads the version from -PappVersion and the signing config from SIGNING_* variables;
 # versionCode is MAJOR*10000 + MINOR*100 + PATCH (see the android skill).
 # A debug-signed APK is never published: missing secrets or a debug certificate fail the job.
+#
+# Secrets, read by name: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+# ANDROID_KEY_PASSWORD. Callers pass `secrets: inherit`. With `environment` set (normally
+# `release`), the job runs in that environment and gets its secrets; empty, it uses repository
+# secrets. Environment secrets cannot be passed from a caller, which is why the job declares it.
 on:
   workflow_call:
     inputs:
@@ -45,16 +50,10 @@ on:
         description: Bash run from the repository root before Gradle (the release native library build)
         type: string
         default: ''
-    secrets:
-      keystore-base64:
-        description: The release keystore, base64-encoded (repository secret ANDROID_KEYSTORE_BASE64)
-        required: true
-      keystore-password:
-        required: true
-      key-alias:
-        required: true
-      key-password:
-        required: true
+      environment:
+        description: The GitHub environment holding the signing secrets; empty for repository secrets
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -62,6 +61,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-26.04
+    environment: ${{ inputs.environment }}
     timeout-minutes: 60
     defaults:
       run:
@@ -96,10 +96,13 @@ jobs:
 
       - name: Keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.keystore-base64 }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::The ANDROID_KEYSTORE_BASE64 secret is missing; a release APK must be signed."
+            where="repository secrets"
+            [ -n "$ENVIRONMENT" ] && where="the secrets of the '$ENVIRONMENT' environment"
+            echo "::error::ANDROID_KEYSTORE_BASE64 is missing from $where (and the caller must pass secrets: inherit); a release APK must be signed."
             exit 1
           fi
           umask 077
@@ -118,9 +121,9 @@ jobs:
           VERSION: ${{ inputs.version }}
           TASK: ${{ inputs.gradle-task }}
           SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
-          SIGNING_STORE_PASSWORD: ${{ secrets.keystore-password }}
-          SIGNING_KEY_ALIAS: ${{ secrets.key-alias }}
-          SIGNING_KEY_PASSWORD: ${{ secrets.key-password }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew "$TASK" "-PappVersion=$VERSION"

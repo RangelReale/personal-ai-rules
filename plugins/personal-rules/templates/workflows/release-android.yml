@@ -25,11 +25,9 @@ jobs:
     uses: RangelReale/personal-ai-rules/.github/workflows/android-release.yml@__RULES_REF__
     with:
       version: ${{ needs.check.outputs.version }}
-    secrets:
-      keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
-      key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # GitHub environment with the signing secrets ('' = repository secrets).
+      environment: '__RELEASE_ENVIRONMENT__'
+    secrets: inherit
 
   # Component release jobs (see release-component-*.yml) go here; add each to publish's needs.
 

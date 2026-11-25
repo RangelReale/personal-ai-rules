@@ -9,7 +9,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/.github/workflows"
 cp .github/actionlint.yaml "$tmp/.github/"
-fill() { sed 's/__RULES_REF__/v0.0.0/g' "$@"; }
+fill() { sed 's/__RULES_REF__/v0.0.0/g; s/__RELEASE_ENVIRONMENT__/release/g' "$@"; }
 for f in "$T"/ci-*.yml "$T"/release-*.yml; do
   case "${f##*/}" in *-component-*) continue ;; esac
   fill "$f" > "$tmp/.github/workflows/${f##*/}"
