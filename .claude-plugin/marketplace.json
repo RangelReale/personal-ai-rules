@@ -1,0 +1,17 @@
+{
+  "name": "personal-ai-rules",
+  "owner": {
+    "name": "Rangel Reale"
+  },
+  "metadata": {
+    "description": "Rangel Reale's reusable AI coding rules: always-on git and repository rules, per-language skills, and commands that set up and audit a repository."
+  },
+  "plugins": [
+    {
+      "name": "personal-rules",
+      "source": "./plugins/personal-rules",
+      "description": "Always-on repository rules, Android/Rust/Go/C++ skills, and /new-project, /check, /establish, /release and /add-* commands.",
+      "category": "development"
+    }
+  ]
+}
